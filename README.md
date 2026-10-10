@@ -5,7 +5,7 @@
 **网页定制助手 · 油猴脚本工具箱**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8B5CF6?style=flat&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.0-0078D4?style=flat)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/Version-2.4.1-0078D4?style=flat)](web-customizer.user.js)
 [![Tampermonkey](https://img.shields.io/badge/Requires-Tampermonkey-00485B?style=flat&logo=tampermonkey&logoColor=white)](https://www.tampermonkey.net/)
 [![Modules](https://img.shields.io/badge/内置模块-3-F59E0B?style=flat)]()
 
@@ -20,7 +20,7 @@
 - 📈 **雪球隐藏右侧栏**（v2.4.0）：在 xueqiu.com 上自动隐藏右侧栏（热门话题/热门基金/页脚信息等）并把主内容栏拉宽占满。采用**双层策略**——第一层为精确选择器（基于线上 DOM 实测：首页/时间线页的两栏容器为 `AnonymousHome_container`，右栏 `home__col--rt_XXX`、主栏 `home__col--lf_XXX`，hash 后缀随构建变化故用 `[class*=]` 包含匹配）；第二层为运行时几何识别兜底，自动定位「主栏 + 右侧窄列」（宽 200~520px 且不足容器 40%）的两栏容器，不限布局类型（flex/grid/float/block 通吃），覆盖个股页（`.stock__main`/`.stock__side`）及其他改版页面；定时器 + MutationObserver 双驱动，SPA 路由切换/动态渲染后自动重新识别；登录版首页中间栏宽度可在面板自定义（「中间栏宽度」输入框，0=自动拉满）；右下角 AI 提问悬浮组件（.seekball-container）一并隐藏；模块关闭或黑名单生效时自动清除标记、还原原状
 - 🔵 **可拖拽悬浮球**：任意拖动位置，自动记忆；带滚动进度环，下滑超过 200px 才显示
 - ⚙️ **右键悬浮球 / 点击 ⚙ 角标 / 油猴菜单** 三种方式打开设置面板
-- 🚫 **两层黑名单**（v2.0 模块化）：**全局黑名单** = 总闸，名单内网站禁用所有功能；**模块级黑名单** = 只禁用对应模块（例如 github.com 仅禁用回顶球、不影响其他模块）。模块判定 = 模块开关 && 不在全局黑名单 && 不在本模块黑名单
+- 🚫 **本机地址一律禁用**：localhost / 127.0.0.1 / 内网 IP（10.x、172.16-31.x、192.168.x、169.254.x、0.x）/ *.local / *.lan / file: 页面上所有功能自动禁用（本地开发页面不受干扰，设置面板仍可打开）。**两层黑名单**（v2.0 模块化）：**全局黑名单** = 总闸，名单内网站禁用所有功能；**模块级黑名单** = 只禁用对应模块（例如 github.com 仅禁用回顶球、不影响其他模块）。模块判定 = 模块开关 && 非本机地址 && 不在全局黑名单 && 不在本模块黑名单
 - 🏠 **当前网站快捷操作**：全局与每个模块区块内均有「把当前网站加入黑名单 / 从黑名单移除」按钮（写入后点「保存」生效）
 - 🪶 **轻量运行**（v2.1.1/v2.2.0 性能修复）：全量选集扫描降频至 5 秒一次（每秒仅保留按钮重挂/钩子检查等廉价操作），后台标签页完全跳过扫描，选集条目按 key 预去重后再读文本、策略一命中即跳过锚点兜底扫描；**每连播 10 集自动整页换血一次**，回收 B 站播放器原地 `reload` 累积的内存（长挂机整机卡死的根源），换血后按持久化顺序续播
 - 🧩 **模块化架构**：配置按模块命名空间隔离存储（`config.modules.<id>`），各模块通过 `defineModule` 注册，声明自己的默认配置 / `mount` / `refresh` / `renderSettings` 钩子；面板的开关 + 黑名单区块自动生成，新增模块零侵入

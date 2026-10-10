@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.4.0
+// @version      2.4.1
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -141,8 +141,28 @@
     return (list || []).some(function (p) { return hostMatchesPattern(host, p); });
   }
 
-  // 模块在本站点是否生效：模块开关 && 不在全局黑名单 && 不在本模块黑名单
+  // 本机/内网地址：所有功能一律禁用（本地开发页面不受脚本干扰）
+  function isLocalAddress() {
+    if (location.protocol === "file:") return true;
+    var h = location.hostname || "";
+    if (!h) return false;
+    if (h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]" ||
+        h.slice(-6) === ".local" || h.slice(-4) === ".lan" || h.slice(-5) === ".home" ||
+        h.slice(-4) === ".arpa") return true;
+    var m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (m) {
+      var a = +m[1], b = +m[2];
+      if (a === 127 || a === 10 || a === 0 ||
+          (a === 192 && b === 168) ||
+          (a === 172 && b >= 16 && b <= 31) ||
+          (a === 169 && b === 254)) return true;
+    }
+    return false;
+  }
+
+  // 模块在本站点是否生效：模块开关 && 非本机地址 && 不在全局黑名单 && 不在本模块黑名单
   function isModuleEnabledHere(id) {
+    if (isLocalAddress()) return false;
     var m = config && config.modules[id];
     if (!m || !m.enabled) return false;
     if (isBlacklistedHere(config.globalBlacklist)) return false;
@@ -153,6 +173,7 @@
   function moduleStatusHere(id) {
     var m = config && config.modules[id];
     if (!m || !m.enabled) return { on: false, text: "已关闭" };
+    if (isLocalAddress()) return { on: false, text: "本机地址已禁用" };
     if (isBlacklistedHere(config.globalBlacklist)) return { on: false, text: "全局黑名单" };
     if (isBlacklistedHere(m.blacklist)) return { on: false, text: "本模块黑名单" };
     return { on: true, text: "已启用" };
@@ -1065,15 +1086,18 @@
   }
 
   function applyXqWide() {
-    if (!isXueqiuHost() || !document.body) return;
+    if (!isXueqiuHost() || !document.body || document.hidden) return;
     if (!isModuleEnabledHere("xueqiuWide")) { xqMarkCleanup(); return; }
     ensureXqWideCss();
     updateXqDynCss();
+    // 精确选择器已命中当前页面（首页/时间线）时无需启发式扫描，
+    // 一次 querySelector 代替全量 DOM 遍历 + 布局读取（性能关键路径）
+    if (document.querySelector('[class*="home__col--rt"],[class*="user__col--middle"]')) return;
     var candidates = document.body.querySelectorAll("div,main,section");
     for (var i = 0; i < candidates.length; i++) {
       var c = candidates[i];
-      if (c.hasAttribute("data-wb-xq-done")) continue;
-      if (c.querySelector("[data-wb-xq-done]")) continue; // 只处理最外层匹配容器
+      // closest 沿祖先链判断，代价 O(深度)；比逐容器 querySelector 后代扫描便宜得多
+      if (c.closest("[data-wb-xq-done]")) continue; // 只处理最外层匹配容器
       if (c.children.length < 2) continue;
       var cls = String(c.className || "");
       if (cls.indexOf("home__col--") >= 0 || cls.indexOf("stock__") >= 0) continue;
@@ -1097,15 +1121,16 @@
   }
 
   function startXqWide() {
+    // 定时器与 MutationObserver 只在雪球域名启动，其他站点零开销
+    if (!isXueqiuHost()) return;
     if (xqWideTimer) return;
     xqWideTimer = setInterval(function () {
       if (!document.getElementById(HOST_ID)) return;
-      if (!isXueqiuHost()) return;
       try { applyXqWide(); } catch (e) { /* ignore */ }
     }, 2000);
     if (typeof MutationObserver === "function") {
       xqWideObserver = new MutationObserver(function () {
-        if (!isXueqiuHost() || !isModuleEnabledHere("xueqiuWide")) return;
+        if (!isModuleEnabledHere("xueqiuWide")) return;
         scheduleXqWide();
       });
       var attach = function () {
