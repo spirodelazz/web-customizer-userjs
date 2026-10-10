@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.3.1
+// @version      2.3.2
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -976,8 +976,9 @@
   var xqWideScheduled = false;
 
   function isXueqiuHost() {
-    return location.hostname === "xueqiu.com" ||
-      location.hostname.slice(-9) === ".xueqiu.com";
+    var h = location.hostname || "";
+    return h === "xueqiu.com" ||
+      (h.length > 11 && h.slice(h.length - 11) === ".xueqiu.com");
   }
 
   function ensureXqWideCss() {
