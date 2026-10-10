@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.3.2
+// @version      2.3.3
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -987,10 +987,15 @@
     var style = document.createElement("style");
     style.id = "wb-xq-wide-style";
     style.textContent = [
-      /* 首页/时间线页：右栏隐藏，主栏拉宽（home__col--rt/--lf 后带构建 hash，用包含匹配） */
+      /* 首页/时间线页：右栏隐藏，主栏拉宽（匿名版带构建 hash，登录版无 hash，包含匹配通吃） */
       '[class*="home__col--rt"]{display:none!important;}',
       '[class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
+      /* 登录版首页：中间内容栏固定 680px，拉宽占满容器；右下角 AI 提问悬浮组件隐藏 */
+      '[class*="user__col--middle"]{width:auto!important;max-width:none!important;' +
+      'flex:1 1 auto!important;float:none!important;}',
+      '[class*="user__col--middle"] > div{max-width:none!important;}',
+      '.seekball-container{display:none!important;}',
       /* 兜底标记：flex:1 拉宽 flex 主栏；grid-column 让 grid 主栏跨全行；
          float:none + width:auto 兼容 float/block 布局；互不冲突 */
       "[data-wb-xq-side]{display:none!important;}",
