@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.3.3
+// @version      2.4.0
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -991,9 +991,7 @@
       '[class*="home__col--rt"]{display:none!important;}',
       '[class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
-      /* 登录版首页：中间内容栏固定 680px，拉宽占满容器；右下角 AI 提问悬浮组件隐藏 */
-      '[class*="user__col--middle"]{width:auto!important;max-width:none!important;' +
-      'flex:1 1 auto!important;float:none!important;}',
+      /* 登录版首页：中间内容栏宽度可调（动态样式见 wb-xq-wide-dyn），默认拉满 */
       '[class*="user__col--middle"] > div{max-width:none!important;}',
       '.seekball-container{display:none!important;}',
       /* 兜底标记：flex:1 拉宽 flex 主栏；grid-column 让 grid 主栏跨全行；
@@ -1049,10 +1047,28 @@
     return { main: main.el, side: side.el };
   }
 
+  var xqDynStyle = null;
+
+  // 中间栏宽度设置：>300 视为固定像素宽，否则清空规则（默认拉满）
+  function updateXqDynCss() {
+    if (!document.head) return;
+    if (!xqDynStyle) {
+      xqDynStyle = document.createElement("style");
+      xqDynStyle.id = "wb-xq-wide-dyn";
+      document.head.appendChild(xqDynStyle);
+    }
+    var m = (config && config.modules.xueqiuWide) || {};
+    var w = parseFloat(m.middleWidth);
+    xqDynStyle.textContent = (w > 300)
+      ? '[class*="user__col--middle"]{width:' + w + 'px!important;max-width:none!important;flex:0 0 auto!important;float:none!important;}'
+      : '[class*="user__col--middle"]{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}';
+  }
+
   function applyXqWide() {
     if (!isXueqiuHost() || !document.body) return;
     if (!isModuleEnabledHere("xueqiuWide")) { xqMarkCleanup(); return; }
     ensureXqWideCss();
+    updateXqDynCss();
     var candidates = document.body.querySelectorAll("div,main,section");
     for (var i = 0; i < candidates.length; i++) {
       var c = candidates[i];
@@ -1104,9 +1120,24 @@
     id: "xueqiuWide",
     label: "雪球隐藏右侧栏",
     icon: "📈",
-    defaults: {},
+    defaults: { middleWidth: 0 }, // 中间栏宽度 px；0 = 自动拉满
     mount: function () { startXqWide(); applyXqWide(); },
-    refresh: function () { applyXqWide(); }
+    refresh: function () { applyXqWide(); },
+    renderSettings: function (box) {
+      var label = document.createElement("label");
+      label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+      label.textContent = "中间栏宽度 (px，0=拉满)：";
+      var inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = "0";
+      inp.max = "1600";
+      inp.step = "10";
+      inp.style.cssText = "width:90px;";
+      inp.setAttribute("data-mod-setting", "xueqiuWide");
+      inp.setAttribute("data-setting-key", "middleWidth");
+      label.appendChild(inp);
+      box.appendChild(label);
+    }
   });
 
   /* ==========================================================
@@ -1281,6 +1312,13 @@
       if (cb) cb.checked = m.enabled !== false;
       var ta = moduleTa(def.id);
       if (ta) ta.value = (m.blacklist || []).join("\n");
+      var d = def.defaults || {};
+      for (var k in d) {
+        if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
+        var inp = panel.querySelector(
+          '[data-mod-setting="' + def.id + '"][data-setting-key="' + k + '"]');
+        if (inp) inp.value = (m[k] !== undefined) ? m[k] : d[k];
+      }
     });
     refreshSiteStatus();
     panel.classList.add("open");
@@ -1312,6 +1350,15 @@
       m.enabled = !cb || cb.checked;
       var ta = moduleTa(def.id);
       m.blacklist = ta ? parseLines(ta.value) : (m.blacklist || []);
+      var d = def.defaults || {};
+      for (var k in d) {
+        if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
+        var inp = panel.querySelector(
+          '[data-mod-setting="' + def.id + '"][data-setting-key="' + k + '"]');
+        if (!inp) continue;
+        var v = parseFloat(inp.value);
+        m[k] = isNaN(v) ? d[k] : v;
+      }
     });
     saveConfig();
     MODULE_DEFS.forEach(function (def) {
