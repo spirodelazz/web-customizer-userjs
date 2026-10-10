@@ -5,18 +5,19 @@
 **网页定制助手 · 油猴脚本工具箱**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8B5CF6?style=flat&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.2.1-0078D4?style=flat)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/Version-2.3.1-0078D4?style=flat)](web-customizer.user.js)
 [![Tampermonkey](https://img.shields.io/badge/Requires-Tampermonkey-00485B?style=flat&logo=tampermonkey&logoColor=white)](https://www.tampermonkey.net/)
-[![Modules](https://img.shields.io/badge/内置模块-2-F59E0B?style=flat)]()
+[![Modules](https://img.shields.io/badge/内置模块-3-F59E0B?style=flat)]()
 
 </div>
 
-一个 Chrome 油猴（Tampermonkey）用户脚本，定位为**网页定制化工具箱**：采用**模块化架构（v2.0）**，每个功能模块拥有独立的配置命名空间、启用开关、模块级黑名单与专属设置，互不干扰；面板区块随模块自动生成，可无侵入地持续添加新模块。当前内置功能：「回到顶部」悬浮球、B站合集/分P 随机播放。
+一个 Chrome 油猴（Tampermonkey）用户脚本，定位为**网页定制化工具箱**：采用**模块化架构（v2.0）**，每个功能模块拥有独立的配置命名空间、启用开关、模块级黑名单与专属设置，互不干扰；面板区块随模块自动生成，可无侵入地持续添加新模块。当前内置功能：「回到顶部」悬浮球、B站合集/分P 随机播放、雪球隐藏右侧栏并拉宽正文。
 
 ## 功能特性
 
 - ⬆️ **一键回到顶部**：平滑滚动，滚动过程中无干扰
 - 🔀 **合集随机播放**（v2.2.1，交互参考 Chrome 扩展《哔哩哔哩合集视频倒序随机播放》/ BilibiliPlaylistController）：在侧栏合集标题旁注入一个 **「随机播放」** 按钮——点击打乱内部播放顺序数组（**当前播放的视频自动置顶**，其余随机排列）并同步重排侧栏，**侧栏滚动位置自动复位到顶部**（从置顶条目向上遍历祖先链归零所有可滚动容器，兼容滚动容器在合集容器内部或外层的布局），置顶视频立即可见；自动连播时通过覆写 `window.player.next/prev` + `video.ended` 事件按新顺序取下一集，并用官方 `player.reload({bvid})` 原地加载，全程 SPA 免整页刷新；未点过按钮时完全走 B 站原生逻辑（顺序不变）。选集识别兼容新版 B 站 `.video-pod__item[data-key]`（data-key = bvid）与旧版链接元素双策略，数据源为侧栏 DOM + 页面数据 `__INITIAL_STATE__`（`ugc_season`/`pages`）双保险；随机顺序自动保存到标签页会话（sessionStorage），**整页刷新后按原随机顺序无缝续播**，且**每连播 10 集自动整页「换血」一次**（见轻量运行）
+- 📈 **雪球隐藏右侧栏**（v2.3.1）：在 xueqiu.com 上自动隐藏右侧栏（热门话题/热门基金/页脚信息等）并把主内容栏拉宽占满。采用**双层策略**——第一层为精确选择器（基于线上 DOM 实测：首页/时间线页的两栏容器为 `AnonymousHome_container`，右栏 `home__col--rt_XXX`、主栏 `home__col--lf_XXX`，hash 后缀随构建变化故用 `[class*=]` 包含匹配）；第二层为运行时几何识别兜底，自动定位「主栏 + 右侧窄列」（宽 200~520px 且不足容器 40%）的两栏容器，不限布局类型（flex/grid/float/block 通吃），覆盖个股页（`.stock__main`/`.stock__side`）及其他改版页面；定时器 + MutationObserver 双驱动，SPA 路由切换/动态渲染后自动重新识别；模块关闭或黑名单生效时自动清除标记、还原原状
 - 🔵 **可拖拽悬浮球**：任意拖动位置，自动记忆；带滚动进度环，下滑超过 200px 才显示
 - ⚙️ **右键悬浮球 / 点击 ⚙ 角标 / 油猴菜单** 三种方式打开设置面板
 - 🚫 **两层黑名单**（v2.0 模块化）：**全局黑名单** = 总闸，名单内网站禁用所有功能；**模块级黑名单** = 只禁用对应模块（例如 github.com 仅禁用回顶球、不影响其他模块）。模块判定 = 模块开关 && 不在全局黑名单 && 不在本模块黑名单
@@ -51,6 +52,7 @@
 | --- | --- |
 | 左键点击悬浮球 | 平滑回到顶部 |
 | 点击合集标题旁「随机播放」 | 打乱合集播放顺序（当前视频置顶、其余随机），侧栏列表同步重排并滚回顶部，自动连播按新顺序免刷新连播 |
+| 访问 xueqiu.com | 自动隐藏右侧栏（热门基金/页脚信息等），主内容栏拉宽占满 |
 | 按住拖动悬浮球 | 调整位置（自动保存） |
 | 右键悬浮球 / 点击 ⚙ 角标 | 打开设置面板 |
 | Tampermonkey 菜单 | 「回到顶部」/「设置」两个入口 |
@@ -70,7 +72,8 @@
   globalBlacklist: [],
   modules: {
     backToTop:  { enabled: true, blacklist: [], showThreshold: 200, btnPos: null },
-    biliRandom: { enabled: true, blacklist: [] }
+    biliRandom: { enabled: true, blacklist: [] },
+    xueqiuWide: { enabled: true, blacklist: [] }
   }
 }
 ```

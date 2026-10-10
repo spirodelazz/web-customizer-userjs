@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.2.1
-// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）。按文末扩展点可无侵入添加新模块。
+// @version      2.3.1
+// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
 // @supportURL   https://github.com/spirodelazz/web-customizer-userjs/issues
@@ -957,7 +957,154 @@
   });
 
   /* ==========================================================
-   * 五、设置面板（按已注册模块自动生成区块）
+   * 五、模块：雪球隐藏右侧栏并拉宽正文（配置命名空间 modules.xueqiuWide）
+   * ----------------------------------------------------------
+   * 基于雪球线上 DOM 实测（Firecrawl 渲染抓取）实现两层策略：
+   * 1) 精确选择器：首页/时间线页两栏为 AnonymousHome_container_2te 容器，
+   *    左主栏 home__col--lf_XXX + 右侧栏 home__col--rt_XXX（hash 后缀随构建
+   *    变化，故用 [class*=] 包含匹配）；隐藏右栏并把主栏拉宽。
+   * 2) 通用兜底：其余页面（个股页 .stock__main/.stock__side 等 float/block
+   *    布局、未来改版页面）运行时按几何特征识别「主栏 + 右侧窄列」——
+   *    侧栏 = 位于主栏右侧、宽 200~520px 且不足容器 40% 的兄弟列，
+   *    不限定布局类型（flex/grid/float/block 通吃）。
+   * 定时器 + MutationObserver 双驱动：雪球是 SPA，路由切换/动态渲染后
+   * 自动重新识别；模块关闭或黑名单生效时清除全部标记还原原状。
+   * ========================================================== */
+  var xqWideCssDone = false;
+  var xqWideTimer = null;
+  var xqWideObserver = null;
+  var xqWideScheduled = false;
+
+  function isXueqiuHost() {
+    return location.hostname === "xueqiu.com" ||
+      location.hostname.slice(-9) === ".xueqiu.com";
+  }
+
+  function ensureXqWideCss() {
+    if (xqWideCssDone || !document.head) return;
+    xqWideCssDone = true;
+    var style = document.createElement("style");
+    style.id = "wb-xq-wide-style";
+    style.textContent = [
+      /* 首页/时间线页：右栏隐藏，主栏拉宽（home__col--rt/--lf 后带构建 hash，用包含匹配） */
+      '[class*="home__col--rt"]{display:none!important;}',
+      '[class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
+      'flex:1 1 auto!important;float:none!important;}',
+      /* 兜底标记：flex:1 拉宽 flex 主栏；grid-column 让 grid 主栏跨全行；
+         float:none + width:auto 兼容 float/block 布局；互不冲突 */
+      "[data-wb-xq-side]{display:none!important;}",
+      "[data-wb-xq-main]{flex:1 1 auto!important;grid-column:1/-1!important;" +
+      "width:auto!important;max-width:none!important;float:none!important;}"
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  // 清除全部标记（模块关闭/黑名单生效时还原原状）
+  function xqMarkCleanup() {
+    var marked = document.querySelectorAll(
+      "[data-wb-xq-side],[data-wb-xq-main],[data-wb-xq-done]");
+    for (var i = 0; i < marked.length; i++) {
+      var n = marked[i];
+      n.removeAttribute("data-wb-xq-side");
+      n.removeAttribute("data-wb-xq-main");
+      n.removeAttribute("data-wb-xq-done");
+    }
+  }
+
+  // 在容器内识别「主栏 + 右侧栏」组合（纯几何特征，不限布局类型），
+  // 返回 {main, side} 或 null
+  function xqDetectPair(container, cr) {
+    var kids = [];
+    for (var i = 0; i < container.children.length; i++) {
+      var k = container.children[i];
+      if (k.nodeType !== 1) continue;
+      var kr = k.getBoundingClientRect();
+      if (kr.width >= 100 && kr.height >= 150) kids.push({ el: k, r: kr });
+    }
+    if (kids.length < 2) return null;
+    // 侧栏：宽度 200~520px、不足容器 40%、取最靠右的窄列
+    var side = null;
+    for (var j = 0; j < kids.length; j++) {
+      var w = kids[j].r.width;
+      if (w >= 200 && w <= 520 && w < cr.width * 0.4) {
+        if (!side || kids[j].r.left > side.r.left) side = kids[j];
+      }
+    }
+    if (!side) return null;
+    // 主栏：侧栏左侧最宽、且与侧栏垂直并排的兄弟元素
+    var main = null;
+    for (var m = 0; m < kids.length; m++) {
+      var kid = kids[m];
+      if (kid.el === side.el || kid.r.left >= side.r.left) continue;
+      if (kid.r.bottom < side.r.top + 50 || kid.r.top > side.r.bottom - 50) continue;
+      if (!main || kid.r.width > main.r.width) main = kid;
+    }
+    if (!main || main.r.width < cr.width * 0.45) return null;
+    return { main: main.el, side: side.el };
+  }
+
+  function applyXqWide() {
+    if (!isXueqiuHost() || !document.body) return;
+    if (!isModuleEnabledHere("xueqiuWide")) { xqMarkCleanup(); return; }
+    ensureXqWideCss();
+    var candidates = document.body.querySelectorAll("div,main,section");
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (c.hasAttribute("data-wb-xq-done")) continue;
+      if (c.querySelector("[data-wb-xq-done]")) continue; // 只处理最外层匹配容器
+      if (c.children.length < 2) continue;
+      var cls = String(c.className || "");
+      if (cls.indexOf("home__col--") >= 0 || cls.indexOf("stock__") >= 0) continue;
+      var cr = c.getBoundingClientRect();
+      if (cr.width < 900 || cr.width > window.innerWidth * 1.1) continue;
+      var pair = xqDetectPair(c, cr);
+      if (!pair) continue;
+      pair.side.setAttribute("data-wb-xq-side", "1");
+      pair.main.setAttribute("data-wb-xq-main", "1");
+      c.setAttribute("data-wb-xq-done", "1");
+    }
+  }
+
+  function scheduleXqWide() {
+    if (xqWideScheduled) return;
+    xqWideScheduled = true;
+    setTimeout(function () {
+      xqWideScheduled = false;
+      try { applyXqWide(); } catch (e) { /* ignore */ }
+    }, 300);
+  }
+
+  function startXqWide() {
+    if (xqWideTimer) return;
+    xqWideTimer = setInterval(function () {
+      if (!document.getElementById(HOST_ID)) return;
+      if (!isXueqiuHost()) return;
+      try { applyXqWide(); } catch (e) { /* ignore */ }
+    }, 2000);
+    if (typeof MutationObserver === "function") {
+      xqWideObserver = new MutationObserver(function () {
+        if (!isXueqiuHost() || !isModuleEnabledHere("xueqiuWide")) return;
+        scheduleXqWide();
+      });
+      var attach = function () {
+        if (document.body) xqWideObserver.observe(document.body, { childList: true, subtree: true });
+      };
+      if (document.body) attach();
+      else document.addEventListener("DOMContentLoaded", attach);
+    }
+  }
+
+  defineModule({
+    id: "xueqiuWide",
+    label: "雪球隐藏右侧栏",
+    icon: "📈",
+    defaults: {},
+    mount: function () { startXqWide(); applyXqWide(); },
+    refresh: function () { applyXqWide(); }
+  });
+
+  /* ==========================================================
+   * 六、设置面板（按已注册模块自动生成区块）
    * ========================================================== */
   function panelActionButton(act, text) {
     var b = el("button", "wb-btn");
@@ -1169,7 +1316,7 @@
   }
 
   /* ==========================================================
-   * 六、初始化
+   * 七、初始化
    * ========================================================== */
   function init() {
     config = loadConfig();
