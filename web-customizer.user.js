@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.4.3
-// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
+// @version      2.5.0
+// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
 // @supportURL   https://github.com/spirodelazz/web-customizer-userjs/issues
@@ -1214,7 +1214,81 @@
   });
 
   /* ==========================================================
-   * 六、设置面板（按已注册模块自动生成区块）
+   * 六、模块：X（推特）隐藏右侧栏（配置命名空间 modules.xSidebarHide）
+   * ----------------------------------------------------------
+   * X 桌面版是三栏布局：左侧导航 header[role=banner]、中间主栏
+   * [data-testid="primaryColumn"]、右侧栏 [data-testid="sidebarColumn"]
+   * （搜索框 / 订阅 Premium / 有什么新鲜事 / 推荐关注等）。
+   * 右侧栏整体隐藏后 flex 布局自动回流，主栏位置与内容不变；这些
+   * data-testid 由 React 组件稳定输出，改版后依旧有效，因此用纯 CSS
+   * 一次注入驱动，无需定时扫描与几何识别（零运行时开销）。
+   * 面板可把主栏宽度改为固定像素（0 = 保持 X 默认）：隐藏侧栏后宽屏下
+   * 正文仍被限制在 600px，右侧会留下大片空白，按需拉宽即可。
+   * 模块关闭或黑名单生效时移除样式表，立即还原原状。
+   * ========================================================== */
+  var X_STYLE_ID = "wb-x-sidebar-style";
+
+  // x.com 与旧域名 twitter.com（含子域）
+  function isXHost() {
+    var h = location.hostname || "";
+    return h === "x.com" || h.slice(-6) === ".x.com" ||
+           h === "twitter.com" || h.slice(-12) === ".twitter.com";
+  }
+
+  function applyXSidebarHide() {
+    if (!isXHost()) return; // 其他站点零开销
+    var existing = document.getElementById(X_STYLE_ID);
+    if (!isModuleEnabledHere("xSidebarHide")) {
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      return;
+    }
+    if (!document.head) return;
+    var rules = ['[data-testid="sidebarColumn"]{display:none!important;}'];
+    var m = (config && config.modules.xSidebarHide) || {};
+    var w = parseFloat(m.mainWidth);
+    if (w > 0) {
+      // X 的列布局由 flex 定宽（flex-basis），只写 width 会被 flex 基准覆盖，
+      // 故同时给出 flex 简写：可伸可缩 + 基准 = w，配 max-width 兜住上限。
+      rules.push('[data-testid="primaryColumn"]{width:' + w + 'px!important;' +
+        "max-width:" + w + "px!important;flex:1 1 " + w + 'px!important;}');
+    }
+    var css = rules.join("\n");
+    if (existing) {
+      if (existing.textContent !== css) existing.textContent = css; // 宽度改过才写，避免无意义回流
+      return;
+    }
+    var style = document.createElement("style");
+    style.id = X_STYLE_ID;
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  defineModule({
+    id: "xSidebarHide",
+    label: "X（推特）隐藏右侧栏",
+    icon: "🐦",
+    defaults: { mainWidth: 0 }, // 主栏宽度 px；0 = 保持 X 默认
+    mount: function () { applyXSidebarHide(); },
+    refresh: function () { applyXSidebarHide(); },
+    renderSettings: function (box) {
+      var label = document.createElement("label");
+      label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+      label.textContent = "主栏宽度 (px，0=X 默认)：";
+      var inp = document.createElement("input");
+      inp.type = "number";
+      inp.min = "0";
+      inp.max = "1600";
+      inp.step = "10";
+      inp.style.cssText = "width:90px;";
+      inp.setAttribute("data-mod-setting", "xSidebarHide");
+      inp.setAttribute("data-setting-key", "mainWidth");
+      label.appendChild(inp);
+      box.appendChild(label);
+    }
+  });
+
+  /* ==========================================================
+   * 七、设置面板（按已注册模块自动生成区块）
    * ========================================================== */
   function panelActionButton(act, text) {
     var b = el("button", "wb-btn");
@@ -1442,7 +1516,7 @@
   }
 
   /* ==========================================================
-   * 七、初始化
+   * 八、初始化
    * ========================================================== */
   function init() {
     config = loadConfig();

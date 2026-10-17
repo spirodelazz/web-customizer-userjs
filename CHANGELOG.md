@@ -2,6 +2,11 @@
 
 本项目所有版本变更记录。版本号遵循语义化版本，最新条目在最前。
 
+## [2.5.0] - 2026-10-17
+
+- 新增「X（推特）隐藏右侧栏」模块 `xSidebarHide`：在 x.com / twitter.com 上以纯 CSS 隐藏 `[data-testid="sidebarColumn"]`（搜索框、订阅 Premium 推广、有什么新鲜事、推荐关注等），只保留左侧导航与中间时间线。样式表一次注入（`wb-x-sidebar-style`），不挂定时器、不做 DOM 扫描，SPA 切换页面持续生效；模块关闭或黑名单生效时移除样式表还原。
+- 面板新增该模块专属设置「主栏宽度」（`defaults.mainWidth`，0 = 保持 X 默认 600px），用于隐藏侧栏后按需拉宽正文；覆盖同时给出 `width` / `max-width` / `flex`（`1 1 Npx`），否则由 `flex-basis` 定宽的列布局会忽略 `width` 而保持原宽。
+
 ## [2.4.3] - 2026-10-17
 
 - 修复个股页正文上方出现大片空白（行情区、图表被推到左侧导航下方）：浮动主栏 `float:none` 后丢失 BFC，内部 `clearfix` 的 `clear:both` 连外层 1380px 高的导航浮动一起清除。现对 `display:block` 的主栏追加 `display:flow-root`（`data-wb-xq-main="block"`）重建 BFC 隔离，flex/grid 主栏保持原样；本地以真实 DOM + CSS 实测，标记后标题/行情/图表纵向位置与未标记时完全一致。
