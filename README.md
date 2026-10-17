@@ -4,7 +4,7 @@
 
 **模块化的网页定制工具箱 · Tampermonkey 用户脚本**
 
-[![Version](https://img.shields.io/badge/version-2.5.1-0078D4.svg)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/version-2.6.0-0078D4.svg)](web-customizer.user.js)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tampermonkey](https://img.shields.io/badge/requires-Tampermonkey-00485B.svg)](https://www.tampermonkey.net/)
 [![CI](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml/badge.svg)](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml)
@@ -13,13 +13,14 @@
 
 一个运行在 Tampermonkey 中的用户脚本，定位为网页定制化工具箱。采用模块化架构：每个功能模块拥有独立的配置命名空间、启用开关、模块级黑名单与专属设置，互不干扰；设置面板的模块区块自动生成，新增模块无需改动框架。
 
-内置四个模块：回到顶部悬浮球、B 站合集随机播放、雪球隐藏右侧栏并拉宽正文、X（推特）隐藏右侧栏。
+内置五个模块：回到顶部悬浮球、防页面自动跳顶、B 站合集随机播放、雪球隐藏右侧栏并拉宽正文、X（推特）隐藏右侧栏。
 
 ## 功能特性
 
 | 模块 | ID | 作用域 | 说明 |
 | --- | --- | --- | --- |
 | 回到顶部 | `backToTop` | 全站 | 可拖拽悬浮球 + 滚动进度环，下滑超过 200px 才显示 |
+| 防页面自动跳顶 | `scrollGuard` | 全站 | 站点重渲染把 `scrollTop` 夹回 0 时，自动还原滚动位置（点击 / 按键 / 路由跳转不干预） |
 | 合集随机播放 | `biliRandom` | B 站 | 合集标题旁注入「随机播放」，当前视频置顶、其余随机；SPA 免刷新连播，顺序跨刷新续播 |
 | 雪球隐藏右侧栏 | `xueqiuWide` | 雪球 | 隐藏右侧栏并拉宽正文，精确选择器 + 运行时几何识别双层策略 |
 | X 隐藏右侧栏 | `xSidebarHide` | x.com / twitter.com | 纯 CSS 隐藏 `[data-testid="sidebarColumn"]`，无定时器、无 DOM 扫描 |
@@ -51,6 +52,7 @@
 | 左键点击悬浮球 | 平滑回到顶部 |
 | 按住拖动悬浮球 | 调整位置（自动保存） |
 | 右键悬浮球 / 点击 ⚙ 角标 | 打开设置面板 |
+| 滚动中页面突然跳回顶部 | 自动还原到原位置（防页面自动跳顶，点击 / 按 Home / 换页不干预） |
 | 点击合集标题旁「随机播放」 | 打乱播放顺序（当前视频置顶），侧栏同步重排并滚回顶部 |
 | 访问 xueqiu.com | 自动隐藏右侧栏并拉宽正文 |
 | 访问 x.com / twitter.com | 自动隐藏右侧栏，只保留导航与时间线 |
@@ -76,6 +78,7 @@
   globalBlacklist: [],
   modules: {
     backToTop:    { enabled: true, blacklist: [], showThreshold: 200, btnPos: null },
+    scrollGuard:  { enabled: true, blacklist: [], minJump: 1200, quietMs: 800 },
     biliRandom:   { enabled: true, blacklist: [] },
     xueqiuWide:   { enabled: true, blacklist: [], middleWidth: 0 },
     xSidebarHide: { enabled: true, blacklist: [], mainWidth: 0 }

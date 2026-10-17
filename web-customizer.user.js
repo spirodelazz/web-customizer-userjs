@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.5.1
-// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
+// @version      2.6.0
+// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、「防页面自动跳顶」滚动位置守护、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
 // @supportURL   https://github.com/spirodelazz/web-customizer-userjs/issues
@@ -50,6 +50,7 @@
   var config = null; // init 时加载
   var scrollSeq = 0; // 页面滚动序号：拖拽层用它判定「这次按下与抬起之间是否夹着滚动」
   var lastScrollAt = 0; // 最近一次滚动时间戳：布局改写类模块用它避开用户滚动中的页面
+  var guardSelfAt = 0; // 最近一次由我们自己发起的回顶（防跳顶模块据此放行）
 
   function sanitizeList(v) {
     var seen = {}, out = [];
@@ -455,6 +456,7 @@
   function scrollToTop() {
     // 已经在顶部时不做任何事，避免误触时白跑一次平滑滚动（也会打断用户正在进行的滚动）
     if ((window.pageYOffset || document.documentElement.scrollTop || 0) < 2) return;
+    guardSelfAt = Date.now(); // 告知「防页面自动跳顶」这是主动回顶，别还原
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -503,6 +505,107 @@
     onResize: function () { applyBallPos(); },
     renderSettings: function (box) {
       box.appendChild(panelActionButton("reset-ball", "重置悬浮球位置"));
+    }
+  });
+
+  /* ==========================================================
+   * 三之二、模块：防页面自动跳顶（配置命名空间 modules.scrollGuard）
+   * ----------------------------------------------------------
+   * 部分站点（如雪球用户主页）在滚到列表底部时会整块重渲染，文档高度瞬间
+   * 塌陷，浏览器把 scrollTop 夹回 0 —— 页面「自己跳回顶部」，而全过程没有
+   * 任何 scrollTo / scrollTop 赋值，油猴侧无法提前拦截，只能事后还原。
+   * 判定条件（全部满足才动手）：
+   *   1) 一次滚动里位置下坠超过 minJump（默认 1200px）且落到顶部 60px 内；
+   *   2) 不是我们自己（悬浮球/菜单）发起的回顶；
+   *   3) 最近 quietMs 内用户没点过任何东西（排除站点自带的回顶按钮）；
+   *   4) 地址没变（排除跳转与 SPA 路由切换）；
+   *   5) 页面可见。
+   * 还原最多重试约 1.2s：站点重渲染期间文档高度可能暂时为 0，一次性
+   * scrollTo 会被夹住，必须等内容恢复后再补位。
+   * ========================================================== */
+  var guardLastY = 0;       // 上一次已知滚动位置
+  var guardLastActAt = 0;   // 最近一次用户主动交互（点击 / 按键）时间
+  var guardLastHref = "";   // 最近一次已知地址
+  var guardBusy = false;    // 正在还原，期间不处理自身产生的滚动
+  var guardTripped = 0;     // 命中次数
+  var guardHooked = false;  // 交互监听只挂一次（ensureUI 可能重建 UI）
+
+  function guardRestore(targetY) {
+    guardBusy = true;
+    var tries = 0;
+    (function restore() {
+      tries++;
+      window.scrollTo(0, targetY);
+      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (Math.abs(y - targetY) > 8 && tries < 12) { setTimeout(restore, 100); return; }
+      setTimeout(function () {
+        guardBusy = false;
+        guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      }, 200);
+    })();
+  }
+
+  function guardOnScroll() {
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+    if (guardBusy) { guardLastY = y; return; }
+    var prev = guardLastY;
+    guardLastY = y;
+    if (!config || document.hidden || !isModuleEnabledHere("scrollGuard")) return;
+    if (location.href !== guardLastHref) { guardLastHref = location.href; return; }
+    var m = config.modules.scrollGuard || {};
+    var minJump = parseFloat(m.minJump) || 1200;
+    var quietMs = parseFloat(m.quietMs) || 800;
+    if (prev - y < minJump || y > 60) return;               // 不是「一大截直接归零」
+    if (Date.now() - guardSelfAt < 2000) return;            // 我们自己的回顶
+    if (Date.now() - guardLastActAt < quietMs) return;      // 用户刚点过/按过键（多为站内回顶按钮、Home 键）
+    guardTripped++;
+    guardRestore(prev);
+    if (guardTripped === 1) toast("已阻止页面自动跳回顶部");
+  }
+
+  defineModule({
+    id: "scrollGuard",
+    label: "防页面自动跳顶",
+    icon: "🛡",
+    defaults: { minJump: 1200, quietMs: 800 },
+    mount: function () {
+      guardLastHref = location.href;
+      guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (guardHooked) return;
+      guardHooked = true;
+      // 点击与按键都视为「用户主动操作」：站内自带回顶按钮、Home / Ctrl+Home
+      // 都会让位置一次性归零，这些都不该被还原
+      document.addEventListener("click", function () {
+        guardLastActAt = Date.now();
+      }, true);
+      document.addEventListener("keydown", function () {
+        guardLastActAt = Date.now();
+      }, true);
+    },
+    refresh: function () {
+      guardLastHref = location.href;
+      guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    },
+    onScroll: function () { guardOnScroll(); },
+    renderSettings: function (box) {
+      var mk = function (labelText, key, val, min, max, step) {
+        var label = document.createElement("label");
+        label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+        label.textContent = labelText;
+        var inp = document.createElement("input");
+        inp.type = "number";
+        inp.min = String(min);
+        inp.max = String(max);
+        inp.step = String(step);
+        inp.value = String(val);
+        inp.style.cssText = "width:90px;";
+        inp.setAttribute("data-mod-setting", "scrollGuard");
+        inp.setAttribute("data-setting-key", key);
+        label.appendChild(inp);
+        return label;
+      };
+      box.appendChild(mk("触发下坠阈值 (px)：", "minJump", 1200, 400, 8000, 100));
+      box.appendChild(mk("点击后静默 (ms)：", "quietMs", 800, 0, 3000, 100));
     }
   });
 
@@ -1051,6 +1154,8 @@
   var xqWideTimer = null;
   var xqWideObserver = null;
   var xqWideScheduled = false;
+  var xqScanAt = 0;          // 上次全量扫描时间
+  var xqScanHit = false;     // 上次扫描是否命中（未命中则降频，避免信息流页面持续整页读布局）
 
   function isXueqiuHost() {
     var h = location.hostname || "";
@@ -1202,6 +1307,11 @@
     // 此刻页面的滚动位置与虚拟列表正由站点自己的逻辑管理，我们改兄弟列的
     // display / 宽度会引起重排，容易把滚动位置带偏。停手 0.5s 后再补做。
     if (Date.now() - lastScrollAt < 500) return;
+    // 全量扫描要为每个候选元素读一次布局，代价不低；上一轮没命中的页面
+    // （如用户主页、个股页改版后）降到 4s 一轮，交互期间不再反复空跑
+    if (Date.now() - xqScanAt < (xqScanHit ? 2000 : 4000)) return;
+    xqScanAt = Date.now();
+    xqScanHit = false;
     xqRevalidateMarks();
     var candidates = document.body.querySelectorAll("div,main,section");
     for (var i = 0; i < candidates.length; i++) {
@@ -1221,6 +1331,7 @@
       pair.main.setAttribute("data-wb-xq-main",
         getComputedStyle(pair.main).display === "block" ? "block" : "1");
       c.setAttribute("data-wb-xq-done", "1");
+      xqScanHit = true;
     }
   }
 
