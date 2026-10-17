@@ -5,7 +5,7 @@
 **网页定制助手 · 油猴脚本工具箱**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-8B5CF6?style=flat&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.4.2-0078D4?style=flat)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/Version-2.4.3-0078D4?style=flat)](web-customizer.user.js)
 [![Tampermonkey](https://img.shields.io/badge/Requires-Tampermonkey-00485B?style=flat&logo=tampermonkey&logoColor=white)](https://www.tampermonkey.net/)
 [![Modules](https://img.shields.io/badge/内置模块-3-F59E0B?style=flat)]()
 

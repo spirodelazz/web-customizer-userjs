@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.4.2
+// @version      2.4.3
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -1019,7 +1019,11 @@
          float:none + width:auto 兼容 float/block 布局；互不冲突 */
       "[data-wb-xq-side]{display:none!important;}",
       "[data-wb-xq-main]{flex:1 1 auto!important;grid-column:1/-1!important;" +
-      "width:auto!important;max-width:none!important;float:none!important;}"
+      "width:auto!important;max-width:none!important;float:none!important;}",
+      /* 原主栏是浮动列时，float:none 会丢失 BFC，内部 clearfix 的 clear:both
+         会连外层更高的浮动（如个股页左侧 1380px 导航）一起清除，
+         把行情区/图表整块推到导航下方（正文上方出现大片空白）→ 用 flow-root 重建 BFC 隔离 */
+      '[data-wb-xq-main="block"]{display:flow-root!important;}'
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -1054,7 +1058,7 @@
       for (var j = 0; j < c.children.length; j++) {
         var k = c.children[j];
         if (k.getAttribute("data-wb-xq-side") === "1") side = k;
-        else if (k.getAttribute("data-wb-xq-main") === "1") main = k;
+        else if (k.hasAttribute("data-wb-xq-main")) main = k;
       }
       if (!side || !main) { xqClearContainerMarks(c, side, main); continue; }
       var cr = c.getBoundingClientRect();
@@ -1147,7 +1151,10 @@
       var pair = xqDetectPair(c, cr);
       if (!pair) continue;
       pair.side.setAttribute("data-wb-xq-side", "1");
-      pair.main.setAttribute("data-wb-xq-main", "1");
+      // display=block 的主栏改为 flow-root 重建 BFC（防止 float:none 后
+      // 内部 clearfix 误清外层浮动造成整块正文下沉）；flex/grid 等保持原布局
+      pair.main.setAttribute("data-wb-xq-main",
+        getComputedStyle(pair.main).display === "block" ? "block" : "1");
       c.setAttribute("data-wb-xq-done", "1");
     }
   }
