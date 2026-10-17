@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.4.1
+// @version      2.4.2
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -1036,6 +1036,46 @@
     }
   }
 
+  // 清除单个容器上的全部标记（复检不通过时调用，下一轮扫描按新布局重新判定）
+  function xqClearContainerMarks(c, side, main) {
+    c.removeAttribute("data-wb-xq-done");
+    if (side) side.removeAttribute("data-wb-xq-side");
+    if (main) main.removeAttribute("data-wb-xq-main");
+  }
+
+  // 复检已标记容器：SPA 路由切换会复用 DOM 节点、页面加载中间态可能与最终布局不同，
+  // 原「侧栏」可能已变成正文却仍被 display:none（整块正文消失）。
+  // 每轮按打标时的同一套几何特征复检，不通过即清除标记，实现自愈。
+  function xqRevalidateMarks() {
+    var containers = document.querySelectorAll("[data-wb-xq-done]");
+    for (var i = 0; i < containers.length; i++) {
+      var c = containers[i];
+      var side = null, main = null;
+      for (var j = 0; j < c.children.length; j++) {
+        var k = c.children[j];
+        if (k.getAttribute("data-wb-xq-side") === "1") side = k;
+        else if (k.getAttribute("data-wb-xq-main") === "1") main = k;
+      }
+      if (!side || !main) { xqClearContainerMarks(c, side, main); continue; }
+      var cr = c.getBoundingClientRect();
+      var mr = main.getBoundingClientRect();
+      // side 被自身规则 [data-wb-xq-side]{display:none!important} 隐藏，直接测量恒为 0；
+      // 需临时用行内 !important 恢复显示再测量（同步执行，同一任务内不发生绘制，无闪烁）
+      var prevDisp = side.style.getPropertyValue("display");
+      var prevPrio = side.style.getPropertyPriority("display");
+      side.style.setProperty("display", "block", "important");
+      var sr = side.getBoundingClientRect();
+      if (prevDisp) side.style.setProperty("display", prevDisp, prevPrio);
+      else side.style.removeProperty("display");
+      var ok = cr.width >= 900 &&
+        sr.width >= 200 && sr.width <= 520 && sr.width < cr.width * 0.4 &&
+        mr.width >= cr.width * 0.45 && mr.width > sr.width &&
+        mr.left < sr.left &&
+        !(sr.bottom < mr.top + 50 || sr.top > mr.bottom - 50);
+      if (!ok) xqClearContainerMarks(c, side, main);
+    }
+  }
+
   // 在容器内识别「主栏 + 右侧栏」组合（纯几何特征，不限布局类型），
   // 返回 {main, side} 或 null
   function xqDetectPair(container, cr) {
@@ -1093,6 +1133,7 @@
     // 精确选择器已命中当前页面（首页/时间线）时无需启发式扫描，
     // 一次 querySelector 代替全量 DOM 遍历 + 布局读取（性能关键路径）
     if (document.querySelector('[class*="home__col--rt"],[class*="user__col--middle"]')) return;
+    xqRevalidateMarks();
     var candidates = document.body.querySelectorAll("div,main,section");
     for (var i = 0; i < candidates.length; i++) {
       var c = candidates[i];
