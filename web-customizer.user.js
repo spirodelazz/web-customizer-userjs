@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.5.0
+// @version      2.5.1
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
 // @supportURL   https://github.com/spirodelazz/web-customizer-userjs/issues
 // @source       https://github.com/spirodelazz/web-customizer-userjs/
+// @downloadURL  https://raw.githubusercontent.com/spirodelazz/web-customizer-userjs/main/web-customizer.user.js
+// @updateURL    https://raw.githubusercontent.com/spirodelazz/web-customizer-userjs/main/web-customizer.user.js
 // @match        *://*/*
 // @run-at       document-end
 // @noframes
@@ -46,6 +48,8 @@
   var shadow = null, ball = null, ringBar = null, panel = null, toastEl = null;
   var toastTimer = null;
   var config = null; // init 时加载
+  var scrollSeq = 0; // 页面滚动序号：拖拽层用它判定「这次按下与抬起之间是否夹着滚动」
+  var lastScrollAt = 0; // 最近一次滚动时间戳：布局改写类模块用它避开用户滚动中的页面
 
   function sanitizeList(v) {
     var seen = {}, out = [];
@@ -197,7 +201,7 @@
       hostEl.style.cssText =
         "display:block;position:fixed;left:0;top:0;width:100%;height:100%;" +
         "margin:0;padding:0;border:0;background:transparent;" +
-        "pointer-events:none;z-index:2147483647;";
+        "pointer-events:none;overflow-anchor:none;z-index:2147483647;";
       (document.documentElement || document.body).appendChild(hostEl);
       shadow = hostEl.attachShadow({ mode: "open" });
       buildStyles(shadow);
@@ -209,15 +213,31 @@
     return shadow;
   }
 
-  // 页面脚本若破坏了宿主/内部节点，滚动时自动重建
+  // 页面脚本若破坏了宿主/内部节点，滚动时自动重建。
+  // 重建一律发生在宿主内部：绝不把宿主从文档里摘下再插回——信息流类长页面
+  // 在底部常有站点自己的滚动监听/滚动锚定，宿主摘挂会附带一次文档级增删，
+  // 滚动位置容易被连带拖动。
   function ensureUI() {
     var hostEl = document.getElementById(HOST_ID);
     var intact = !!(hostEl && hostEl.shadowRoot && shadow &&
       ball && ball.isConnected && panel && panel.isConnected);
     if (intact) return;
-    if (hostEl && hostEl.parentNode) hostEl.parentNode.removeChild(hostEl);
-    shadow = null; ball = null; ringBar = null; panel = null; toastEl = null;
-    ensureShadowRoot();
+    if (!hostEl) {
+      shadow = null; ball = null; ringBar = null; panel = null; toastEl = null;
+      ensureShadowRoot(); // 内部完成样式 / Toast / 面板构建
+      mountAll();
+      return;
+    }
+    var root = hostEl.shadowRoot;
+    if (!root) {
+      try { root = hostEl.attachShadow({ mode: "open" }); } catch (e) { return; }
+    }
+    while (root.firstChild) root.removeChild(root.firstChild);
+    shadow = root;
+    ball = null; ringBar = null; panel = null; toastEl = null;
+    buildStyles(root);
+    buildToast(root);
+    buildPanel(root);
     mountAll();
   }
 
@@ -303,26 +323,48 @@
     root.appendChild(style);
   }
 
-  // 通用拖拽：拖动结束回调 onDrop(left, top)，未拖动（视为点击）则执行 onClick
+  // 通用拖拽：拖动结束回调 onDrop(left, top)，未拖动（视为点击）则执行 onClick。
+  // 判定「点击」必须同时满足：主键按下 → 同一个 pointerId 抬起 → 位移未超阈值 →
+  // 按住时间够短 → 按下与抬起之间页面没滚动过。任一条不满足都不触发 onClick，
+  // 避免滑动页面 / 指针捕获残留把「一次普通抬起」误判成「点悬浮球 → 回到顶部」。
+  var DRAG_THRESHOLD = 5;  // px，超过即视为拖动
+  var CLICK_MAX_MS = 600;  // 按下到抬起的最长间隔，超时视为长按不算点击
+
   function makeDraggable(elem, onClick, onDrop) {
     var dragging = false, moved = false;
+    var pointerId = null, pressAt = 0, pressScrollSeq = 0;
     var sx = 0, sy = 0, startLeft = 0, startTop = 0;
 
+    function release() {
+      var id = pointerId;
+      dragging = false; moved = false; pointerId = null;
+      elem.classList.remove("dragging");
+      if (id !== null && elem.hasPointerCapture && elem.hasPointerCapture(id)) {
+        try { elem.releasePointerCapture(id); } catch (e) { /* ignore */ }
+      }
+    }
+
     elem.addEventListener("pointerdown", function (e) {
-      if (e.button === 2) return;
+      if (e.button !== 0 || e.isPrimary === false) return; // 只认主指针的左键
       dragging = true; moved = false;
+      pointerId = e.pointerId;
+      pressAt = Date.now(); pressScrollSeq = scrollSeq;
       sx = e.clientX; sy = e.clientY;
       var rect = elem.getBoundingClientRect();
       startLeft = rect.left; startTop = rect.top;
+      // 悬浮球的按下/抬起不再冒泡给页面：站点常在整个 document 上挂手势与
+      // 「点击空白处」逻辑，阴影树事件冒泡出去会被当成一次页面交互
       e.preventDefault();
+      e.stopPropagation();
       try { elem.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     });
 
     elem.addEventListener("pointermove", function (e) {
-      if (!dragging) return;
+      if (!dragging || e.pointerId !== pointerId) return;
       var dx = e.clientX - sx, dy = e.clientY - sy;
-      if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
       moved = true;
+      e.stopPropagation();
       elem.classList.add("dragging");
       var w = elem.offsetWidth || BALL_SIZE;
       var h = elem.offsetHeight || BALL_SIZE;
@@ -332,25 +374,37 @@
       elem.style.top = top + "px";
     });
 
-    elem.addEventListener("pointerup", function () {
-      if (!dragging) return;
-      dragging = false;
-      elem.classList.remove("dragging");
-      if (moved) {
-        var rect = elem.getBoundingClientRect();
+    elem.addEventListener("pointerup", function (e) {
+      if (!dragging || e.pointerId !== pointerId) return; // 只接受同一次按下的抬起
+      var wasMoved = moved;
+      var heldMs = Date.now() - pressAt;
+      var scrolled = scrollSeq !== pressScrollSeq;
+      var rect = elem.getBoundingClientRect();
+      release();
+      e.stopPropagation();
+      if (wasMoved) {
         if (onDrop) onDrop(Math.round(rect.left), Math.round(rect.top));
-      } else if (onClick) {
-        onClick();
+        return;
       }
+      if (scrolled || heldMs > CLICK_MAX_MS) return; // 滑动/长按不算点击
+      if (onClick) onClick();
     });
 
     elem.addEventListener("pointercancel", function () {
-      dragging = false;
-      elem.classList.remove("dragging");
+      if (dragging) release();
+    });
+    // 捕获丢失 / 窗口失焦时指针抬起事件可能永远收不到，
+    // 必须复位，否则 dragging 会一直挂着，后续任意一次抬起都会被当成点击
+    elem.addEventListener("lostpointercapture", function () {
+      if (dragging) release();
+    });
+    window.addEventListener("blur", function () {
+      if (dragging) release();
     });
 
     elem.addEventListener("contextmenu", function (e) {
       e.preventDefault();
+      e.stopPropagation();
       openPanel();
     });
   }
@@ -399,6 +453,8 @@
   }
 
   function scrollToTop() {
+    // 已经在顶部时不做任何事，避免误触时白跑一次平滑滚动（也会打断用户正在进行的滚动）
+    if ((window.pageYOffset || document.documentElement.scrollTop || 0) < 2) return;
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -1115,18 +1171,23 @@
   var xqDynStyle = null;
 
   // 中间栏宽度设置：>300 视为固定像素宽，否则清空规则（默认拉满）
+  // 内容没变就不重写 textContent：改样式表会触发整页样式重算与重排，
+  // 信息流类页面（雪球首页）在滚动/触底加载瞬间被无谓重排，滚动位置容易跟着抖。
   function updateXqDynCss() {
     if (!document.head) return;
-    if (!xqDynStyle) {
+    var m = (config && config.modules.xueqiuWide) || {};
+    var w = parseFloat(m.middleWidth);
+    var css = (w > 300)
+      ? '[class*="user__col--middle"]{width:' + w + 'px!important;max-width:none!important;flex:0 0 auto!important;float:none!important;}'
+      : '[class*="user__col--middle"]{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}';
+    if (xqDynStyle && xqDynStyle.__wbCss === css && document.head.contains(xqDynStyle)) return;
+    if (!xqDynStyle || !document.head.contains(xqDynStyle)) {
       xqDynStyle = document.createElement("style");
       xqDynStyle.id = "wb-xq-wide-dyn";
       document.head.appendChild(xqDynStyle);
     }
-    var m = (config && config.modules.xueqiuWide) || {};
-    var w = parseFloat(m.middleWidth);
-    xqDynStyle.textContent = (w > 300)
-      ? '[class*="user__col--middle"]{width:' + w + 'px!important;max-width:none!important;flex:0 0 auto!important;float:none!important;}'
-      : '[class*="user__col--middle"]{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}';
+    xqDynStyle.textContent = css;
+    xqDynStyle.__wbCss = css;
   }
 
   function applyXqWide() {
@@ -1137,6 +1198,10 @@
     // 精确选择器已命中当前页面（首页/时间线）时无需启发式扫描，
     // 一次 querySelector 代替全量 DOM 遍历 + 布局读取（性能关键路径）
     if (document.querySelector('[class*="home__col--rt"],[class*="user__col--middle"]')) return;
+    // 用户正在滚动时（尤其是触底加载的瞬间）不做启发式布局改写：
+    // 此刻页面的滚动位置与虚拟列表正由站点自己的逻辑管理，我们改兄弟列的
+    // display / 宽度会引起重排，容易把滚动位置带偏。停手 0.5s 后再补做。
+    if (Date.now() - lastScrollAt < 500) return;
     xqRevalidateMarks();
     var candidates = document.body.querySelectorAll("div,main,section");
     for (var i = 0; i < candidates.length; i++) {
@@ -1519,11 +1584,17 @@
    * 八、初始化
    * ========================================================== */
   function init() {
+    try {
+      var ver = (typeof GM_info === "object" && GM_info && GM_info.script) ? GM_info.script.version : "?";
+      console.log("[网页定制助手] v" + ver + " 已加载");
+    } catch (e) { /* 无 GM_info 时忽略 */ }
     config = loadConfig();
     ensureShadowRoot();
     mountAll();
 
     window.addEventListener("scroll", function () {
+      scrollSeq++;
+      lastScrollAt = Date.now();
       MODULE_DEFS.forEach(function (def) {
         try { if (def.onScroll) def.onScroll(); } catch (e) { /* ignore */ }
       });

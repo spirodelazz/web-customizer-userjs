@@ -2,6 +2,15 @@
 
 本项目所有版本变更记录。版本号遵循语义化版本，最新条目在最前。
 
+## [2.5.1] - 2026-10-17
+
+- 修复信息流页面滑到底部时页面跳回顶部、无法翻页的问题。三处诱因同时堵死：
+  - 悬浮球把「任意一次抬起」当成点击：`pointerup` 只校验 `dragging`，指针捕获丢失、在窗口外松开、或多指交叉时 `dragging` 会一直挂着，之后页面上任何一次抬手都可能落进「点击 → 回到顶部」。现在点击判定要求同一次按下的同一 `pointerId` 抬起、位移 < 5px、按住 < 600ms，且按下与抬起之间页面没有滚动过（`scrollSeq` 计数），并在 `lostpointercapture` / `pointercancel` / 窗口失焦时强制复位、显式释放捕获。
+  - 悬浮球的按下/抬起/右键不再冒泡给页面：阴影树事件会重定向后冒到 `document`，站点挂在整个文档上的手势与「点击空白处」逻辑会把操作悬浮球当成一次页面交互，现全部 `stopPropagation`。
+  - 宿主节点重建改为「原地重建内部内容」：原先滚动时若检测到节点被页面脚本破坏，会把 `#wb-customizer-shadow-host` 从文档摘下再插回，信息流底部（站点自带滚动监听/滚动锚定）会跟着抖；同时给宿主加上 `overflow-anchor:none`。
+- 雪球布局改写不再干扰滚动：用户滚动中（< 500ms）跳过启发式扫描与标记复检，动态宽度样式表内容未变时不再重写——避免触底加载瞬间整页重排把滚动位置带偏。
+- 新增 `diagnostic/scroll-jump-trace.js`：控制台粘贴后可捕获 `window.scrollTo` / `scrollTo` / `scrollBy` / `scrollTop` 赋值 / `scrollIntoView` / `location.hash` 的调用栈，用于定位「谁把页面滚回了顶部」。
+
 ## [2.5.0] - 2026-10-17
 
 - 新增「X（推特）隐藏右侧栏」模块 `xSidebarHide`：在 x.com / twitter.com 上以纯 CSS 隐藏 `[data-testid="sidebarColumn"]`（搜索框、订阅 Premium 推广、有什么新鲜事、推荐关注等），只保留左侧导航与中间时间线。样式表一次注入（`wb-x-sidebar-style`），不挂定时器、不做 DOM 扫描，SPA 切换页面持续生效；模块关闭或黑名单生效时移除样式表还原。
