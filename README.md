@@ -4,7 +4,7 @@
 
 **模块化的网页定制工具箱 · Tampermonkey 用户脚本**
 
-[![Version](https://img.shields.io/badge/version-2.7.0-0078D4.svg)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/version-2.8.0-0078D4.svg)](web-customizer.user.js)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tampermonkey](https://img.shields.io/badge/requires-Tampermonkey-00485B.svg)](https://www.tampermonkey.net/)
 [![CI](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml/badge.svg)](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml)

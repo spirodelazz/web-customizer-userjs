@@ -12,15 +12,19 @@
     panel = el("div", "wb-overlay");
     var card = el("div", "wb-panel");
 
-    /* 头部 */
+    /* 头部：标题 + 当前网站 */
     var head = el("div", "wb-header");
     var title = el("span", "wb-title");
     title.textContent = "⚙️ 网页定制助手";
+    var hostPill = el("code", "wb-host-pill");
+    hostPill.textContent = location.hostname || "(未知)";
+    hostPill.title = "当前网站";
     var closeBtn = el("button", "wb-close");
     closeBtn.textContent = "✕";
     closeBtn.title = "关闭";
     closeBtn.setAttribute("data-act", "close");
     head.appendChild(title);
+    head.appendChild(hostPill);
     head.appendChild(closeBtn);
     card.appendChild(head);
 
@@ -32,25 +36,33 @@
       var sec = el("section");
       sec.setAttribute("data-module", def.id);
 
-      var h = el("h3");
-      h.appendChild(document.createTextNode(def.icon + " " + def.label + " "));
-      var lab = el("label", "wb-check");
+      /* 模块头：图标徽章 + 名称 + 状态标签 + 开关 */
+      var modHead = el("div", "wb-mod-head");
+      var badge = el("span", "wb-mod-icon");
+      badge.textContent = def.icon;
+      var titleWrap = el("div", "wb-mod-title");
+      var modName = el("span", "wb-mod-name");
+      modName.textContent = def.label;
+      titleWrap.appendChild(modName);
+      var chip = el("span", "wb-chip");
+      chip.setAttribute("data-mod-chip", def.id);
+      titleWrap.appendChild(chip);
+      var lab = el("label", "wb-switch");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.setAttribute("data-mod-enable", def.id);
+      cb.setAttribute("aria-label", "启用 " + def.label);
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode("启用"));
-      h.appendChild(lab);
-      var chip = el("span", "wb-chip");
-      chip.setAttribute("data-mod-chip", def.id);
-      h.appendChild(chip);
-      sec.appendChild(h);
+      lab.appendChild(el("i"));
+      modHead.appendChild(badge);
+      modHead.appendChild(titleWrap);
+      modHead.appendChild(lab);
+      sec.appendChild(modHead);
 
       if (def.hosts) {
         // 站点专属模块不设黑名单：能填的域名只有作用域自身，等价于模块开关
-        var scope = el("div", "wb-hint");
-        scope.style.margin = "4px 0";
-        scope.textContent = "仅适用于：" + def.hosts.join("、");
+        var scope = el("div", "wb-scope");
+        scope.textContent = "作用域：" + def.hosts.join("、");
         sec.appendChild(scope);
       } else {
         var ta = el("textarea", "small");
@@ -84,6 +96,10 @@
 
     /* 底部 */
     var foot = el("div", "wb-footer");
+    var footHint = el("span", "wb-foot-hint");
+    footHint.setAttribute("data-role", "foot-hint");
+    footHint.textContent = "更改后点击「保存」生效";
+    foot.appendChild(footHint);
     foot.appendChild(el("span", "wb-spacer"));
     foot.appendChild(panelActionButton("close", "取消"));
     var saveBtn = el("button", "wb-btn wb-primary");
@@ -99,6 +115,8 @@
     panel.addEventListener("mousedown", function (e) {
       if (e.target === panel) closePanel(); // 点击遮罩关闭
     });
+    panel.addEventListener("input", function () { setDirtyHint(true); });
+    panel.addEventListener("change", function () { setDirtyHint(true); });
     panel.addEventListener("click", function (e) {
       var btn = e.target.closest ? e.target.closest("button[data-act]") : null;
       if (!btn) return;
@@ -110,6 +128,7 @@
       else if (act === "reset-ball") {
         config.modules.backToTop.btnPos = null;
         saveConfig(); applyBallPos(); updateBallState();
+        setDirtyHint(false);
         toast("已重置悬浮球位置");
       }
     });
@@ -148,6 +167,14 @@
     return out;
   }
 
+  // 底部状态提示：任何控件改动即标记「未保存」，保存 / 重开后复位
+  function setDirtyHint(dirty) {
+    var h = panel && panel.querySelector('[data-role="foot-hint"]');
+    if (!h) return;
+    h.textContent = dirty ? "● 有未保存的更改" : "更改后点击「保存」生效";
+    h.classList.toggle("dirty", dirty);
+  }
+
   function openPanel() {
     if (!config) return;
     ensureShadowRoot();
@@ -165,6 +192,7 @@
         if (inp) inp.value = (m[k] !== undefined) ? m[k] : d[k];
       }
     });
+    setDirtyHint(false);
     refreshSiteStatus();
     panel.classList.add("open");
   }
@@ -205,6 +233,7 @@
       }
     });
     saveConfig();
+    setDirtyHint(false);
     MODULE_DEFS.forEach(function (def) {
       try { if (def.refresh) def.refresh(); } catch (e) { /* ignore */ }
     });

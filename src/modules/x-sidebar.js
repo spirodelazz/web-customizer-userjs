@@ -58,7 +58,7 @@
     refresh: function () { applyXSidebarHide(); },
     renderSettings: function (box) {
       var label = document.createElement("label");
-      label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+      label.className = "wb-setting";
       label.textContent = "主栏宽度 (px，0=X 默认)：";
       var inp = document.createElement("input");
       inp.type = "number";

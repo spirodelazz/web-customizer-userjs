@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.7.0
+// @version      2.8.0
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立作用域与专属设置，互不干扰；站点专属模块自动限定作用域名。内置「回到顶部」悬浮球、「防页面自动跳顶」滚动位置守护、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -286,43 +286,70 @@
       "opacity:0;transition:opacity .2s ease;pointer-events:auto;}",
       "#wb-ball.visible:hover .gear{opacity:1;}",
 
-      ".wb-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;",
-      "align-items:center;justify-content:center;pointer-events:auto;z-index:1;}",
+      ".wb-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);",
+      "display:none;align-items:center;justify-content:center;pointer-events:auto;z-index:1;}",
       ".wb-overlay.open{display:flex;}",
-      ".wb-panel{width:min(520px,92vw);max-height:86vh;overflow:auto;background:#ffffff;color:#1f2937;",
-      "border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.35);font-size:14px;",
+      ".wb-panel{width:min(560px,94vw);max-height:86vh;overflow:auto;background:#ffffff;color:#1f2937;",
+      "border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.4);font-size:14px;",
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;}",
       "@media (prefers-color-scheme: dark){.wb-panel{background:#111827;color:#e5e7eb;}}",
-      ".wb-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;",
-      "border-bottom:1px solid rgba(128,128,128,.2);position:sticky;top:0;background:inherit;}",
+      ".wb-header{display:flex;align-items:center;gap:10px;padding:15px 18px;",
+      "border-bottom:1px solid rgba(128,128,128,.18);position:sticky;top:0;background:inherit;}",
       ".wb-title{font-size:15px;font-weight:700;}",
+      ".wb-host-pill{margin-left:auto;font-family:Consolas,Monaco,monospace;font-size:12px;",
+      "background:rgba(128,128,128,.12);padding:3px 10px;border-radius:999px;max-width:220px;",
+      "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
       ".wb-close{border:0;background:transparent;color:inherit;font-size:14px;cursor:pointer;",
-      "padding:4px 8px;border-radius:6px;}",
+      "padding:4px 8px;border-radius:6px;transition:background .15s;}",
       ".wb-close:hover{background:rgba(128,128,128,.15);}",
-      ".wb-body{padding:6px 18px 2px;}",
-      ".wb-body section{margin:14px 0;}",
-      ".wb-body h3{margin:0 0 8px;font-size:13px;font-weight:700;opacity:.85;display:flex;",
-      "align-items:center;gap:8px;flex-wrap:wrap;}",
-      ".wb-body h3 .wb-chip{margin-left:auto;}",
-      ".wb-check{display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:400;}",
-      ".wb-chip{font-size:12px;padding:2px 8px;border-radius:999px;font-weight:600;}",
+      ".wb-body{padding:12px 16px 4px;}",
+      ".wb-body section{margin:12px 0;padding:12px 14px;border:1px solid rgba(128,128,128,.16);",
+      "border-radius:12px;background:rgba(128,128,128,.04);}",
+      "@media (prefers-color-scheme: dark){.wb-body section{background:rgba(128,128,128,.06);}}",
+      ".wb-mod-head{display:flex;align-items:center;gap:10px;}",
+      ".wb-mod-icon{flex:none;width:26px;height:26px;border-radius:8px;",
+      "background:rgba(128,128,128,.12);display:flex;align-items:center;justify-content:center;font-size:14px;}",
+      ".wb-mod-title{display:flex;align-items:center;gap:8px;flex:1;min-width:0;flex-wrap:wrap;}",
+      ".wb-mod-name{font-size:13px;font-weight:700;}",
+      ".wb-switch{position:relative;width:38px;height:21px;flex:none;cursor:pointer;}",
+      ".wb-switch input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;}",
+      ".wb-switch i{display:block;width:38px;height:21px;border-radius:999px;",
+      "background:rgba(128,128,128,.35);transition:background .2s;}",
+      ".wb-switch i::after{content:\"\";position:absolute;left:2px;top:2px;width:17px;height:17px;",
+      "border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s;}",
+      ".wb-switch input:checked + i{background:#2563eb;}",
+      ".wb-switch input:checked + i::after{transform:translateX(17px);}",
+      "@media (prefers-color-scheme: dark){.wb-switch input:checked + i{background:#3b82f6;}}",
+      ".wb-scope{margin-top:8px;font-size:12px;opacity:.65;}",
+      ".wb-scope code{font-family:Consolas,Monaco,monospace;}",
+      ".wb-chip{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;}",
       ".wb-chip.on{background:#dcfce7;color:#15803d;}",
       ".wb-chip.off{background:#fee2e2;color:#b91c1c;}",
       "@media (prefers-color-scheme: dark){.wb-chip.on{background:rgba(34,197,94,.2);color:#4ade80;}",
       ".wb-chip.off{background:rgba(239,68,68,.2);color:#f87171;}}",
-      ".wb-btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}",
+      ".wb-btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;}",
       ".wb-panel textarea{width:100%;min-height:72px;font:12px/1.6 Consolas,Monaco,monospace;",
       "color:inherit;background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.3);",
-      "border-radius:8px;padding:8px 10px;resize:vertical;outline:none;box-sizing:border-box;}",
-      ".wb-panel textarea.small{min-height:44px;}",
+      "border-radius:8px;padding:8px 10px;resize:vertical;outline:none;box-sizing:border-box;",
+      "transition:border-color .15s;}",
+      ".wb-panel textarea.small{min-height:44px;margin-top:8px;}",
       ".wb-panel textarea:focus{border-color:#2563eb;}",
-      ".wb-hint{font-size:12px;opacity:.6;line-height:1.7;margin:10px 0 4px;}",
+      ".wb-panel input[type=number]{font:12px/1.4 Consolas,Monaco,monospace;color:inherit;",
+      "background:rgba(128,128,128,.08);border:1px solid rgba(128,128,128,.3);border-radius:6px;",
+      "padding:4px 6px;outline:none;transition:border-color .15s;}",
+      ".wb-panel input[type=number]:focus{border-color:#2563eb;}",
+      ".wb-setting{display:flex;align-items:center;gap:6px;font-size:12px;opacity:.85;}",
+      ".wb-hint{font-size:12px;opacity:.6;line-height:1.7;margin:12px 2px 4px;}",
       ".wb-hint code,.wb-body code{font-family:Consolas,Monaco,monospace;}",
       ".wb-footer{display:flex;align-items:center;gap:8px;padding:12px 18px;",
-      "border-top:1px solid rgba(128,128,128,.2);position:sticky;bottom:0;background:inherit;}",
+      "border-top:1px solid rgba(128,128,128,.18);position:sticky;bottom:0;background:inherit;}",
+      ".wb-foot-hint{font-size:12px;opacity:.6;transition:color .2s,opacity .2s;}",
+      ".wb-foot-hint.dirty{opacity:1;color:#b45309;font-weight:600;}",
+      "@media (prefers-color-scheme: dark){.wb-foot-hint.dirty{color:#fbbf24;}}",
       ".wb-spacer{flex:1;}",
       ".wb-btn{border:1px solid rgba(128,128,128,.35);background:transparent;color:inherit;",
-      "padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;}",
+      "padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;",
+      "transition:background .15s,border-color .15s;}",
       ".wb-btn:hover{background:rgba(128,128,128,.12);}",
       ".wb-primary{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:600;}",
       ".wb-primary:hover{background:#1d4ed8;}",
@@ -1360,7 +1387,7 @@
     onScroll: function () { guardOnScroll(); },
     renderSettings: function (box) {
       var label = document.createElement("label");
-      label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+      label.className = "wb-setting";
       label.textContent = "中间栏宽度 (px，0=拉满)：";
       var inp = document.createElement("input");
       inp.type = "number";
@@ -1435,7 +1462,7 @@
     refresh: function () { applyXSidebarHide(); },
     renderSettings: function (box) {
       var label = document.createElement("label");
-      label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+      label.className = "wb-setting";
       label.textContent = "主栏宽度 (px，0=X 默认)：";
       var inp = document.createElement("input");
       inp.type = "number";
@@ -1464,15 +1491,19 @@
     panel = el("div", "wb-overlay");
     var card = el("div", "wb-panel");
 
-    /* 头部 */
+    /* 头部：标题 + 当前网站 */
     var head = el("div", "wb-header");
     var title = el("span", "wb-title");
     title.textContent = "⚙️ 网页定制助手";
+    var hostPill = el("code", "wb-host-pill");
+    hostPill.textContent = location.hostname || "(未知)";
+    hostPill.title = "当前网站";
     var closeBtn = el("button", "wb-close");
     closeBtn.textContent = "✕";
     closeBtn.title = "关闭";
     closeBtn.setAttribute("data-act", "close");
     head.appendChild(title);
+    head.appendChild(hostPill);
     head.appendChild(closeBtn);
     card.appendChild(head);
 
@@ -1484,25 +1515,33 @@
       var sec = el("section");
       sec.setAttribute("data-module", def.id);
 
-      var h = el("h3");
-      h.appendChild(document.createTextNode(def.icon + " " + def.label + " "));
-      var lab = el("label", "wb-check");
+      /* 模块头：图标徽章 + 名称 + 状态标签 + 开关 */
+      var modHead = el("div", "wb-mod-head");
+      var badge = el("span", "wb-mod-icon");
+      badge.textContent = def.icon;
+      var titleWrap = el("div", "wb-mod-title");
+      var modName = el("span", "wb-mod-name");
+      modName.textContent = def.label;
+      titleWrap.appendChild(modName);
+      var chip = el("span", "wb-chip");
+      chip.setAttribute("data-mod-chip", def.id);
+      titleWrap.appendChild(chip);
+      var lab = el("label", "wb-switch");
       var cb = document.createElement("input");
       cb.type = "checkbox";
       cb.setAttribute("data-mod-enable", def.id);
+      cb.setAttribute("aria-label", "启用 " + def.label);
       lab.appendChild(cb);
-      lab.appendChild(document.createTextNode("启用"));
-      h.appendChild(lab);
-      var chip = el("span", "wb-chip");
-      chip.setAttribute("data-mod-chip", def.id);
-      h.appendChild(chip);
-      sec.appendChild(h);
+      lab.appendChild(el("i"));
+      modHead.appendChild(badge);
+      modHead.appendChild(titleWrap);
+      modHead.appendChild(lab);
+      sec.appendChild(modHead);
 
       if (def.hosts) {
         // 站点专属模块不设黑名单：能填的域名只有作用域自身，等价于模块开关
-        var scope = el("div", "wb-hint");
-        scope.style.margin = "4px 0";
-        scope.textContent = "仅适用于：" + def.hosts.join("、");
+        var scope = el("div", "wb-scope");
+        scope.textContent = "作用域：" + def.hosts.join("、");
         sec.appendChild(scope);
       } else {
         var ta = el("textarea", "small");
@@ -1536,6 +1575,10 @@
 
     /* 底部 */
     var foot = el("div", "wb-footer");
+    var footHint = el("span", "wb-foot-hint");
+    footHint.setAttribute("data-role", "foot-hint");
+    footHint.textContent = "更改后点击「保存」生效";
+    foot.appendChild(footHint);
     foot.appendChild(el("span", "wb-spacer"));
     foot.appendChild(panelActionButton("close", "取消"));
     var saveBtn = el("button", "wb-btn wb-primary");
@@ -1551,6 +1594,8 @@
     panel.addEventListener("mousedown", function (e) {
       if (e.target === panel) closePanel(); // 点击遮罩关闭
     });
+    panel.addEventListener("input", function () { setDirtyHint(true); });
+    panel.addEventListener("change", function () { setDirtyHint(true); });
     panel.addEventListener("click", function (e) {
       var btn = e.target.closest ? e.target.closest("button[data-act]") : null;
       if (!btn) return;
@@ -1562,6 +1607,7 @@
       else if (act === "reset-ball") {
         config.modules.backToTop.btnPos = null;
         saveConfig(); applyBallPos(); updateBallState();
+        setDirtyHint(false);
         toast("已重置悬浮球位置");
       }
     });
@@ -1600,6 +1646,14 @@
     return out;
   }
 
+  // 底部状态提示：任何控件改动即标记「未保存」，保存 / 重开后复位
+  function setDirtyHint(dirty) {
+    var h = panel && panel.querySelector('[data-role="foot-hint"]');
+    if (!h) return;
+    h.textContent = dirty ? "● 有未保存的更改" : "更改后点击「保存」生效";
+    h.classList.toggle("dirty", dirty);
+  }
+
   function openPanel() {
     if (!config) return;
     ensureShadowRoot();
@@ -1617,6 +1671,7 @@
         if (inp) inp.value = (m[k] !== undefined) ? m[k] : d[k];
       }
     });
+    setDirtyHint(false);
     refreshSiteStatus();
     panel.classList.add("open");
   }
@@ -1657,6 +1712,7 @@
       }
     });
     saveConfig();
+    setDirtyHint(false);
     MODULE_DEFS.forEach(function (def) {
       try { if (def.refresh) def.refresh(); } catch (e) { /* ignore */ }
     });
