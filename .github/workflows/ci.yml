@@ -14,5 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Build userscript from src/
+        run: node build.js
+      - name: Check committed artifact is up to date
+        run: git diff --exit-code web-customizer.user.js
       - name: Validate userscript syntax
         run: node --check web-customizer.user.js

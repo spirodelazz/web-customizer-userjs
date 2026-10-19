@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.6.0
-// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立黑名单与专属设置，互不干扰。内置「回到顶部」悬浮球、「防页面自动跳顶」滚动位置守护、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
+// @version      2.7.0
+// @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立作用域与专属设置，互不干扰；站点专属模块自动限定作用域名。内置「回到顶部」悬浮球、「防页面自动跳顶」滚动位置守护、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
 // @supportURL   https://github.com/spirodelazz/web-customizer-userjs/issues
@@ -27,8 +27,10 @@
    * ----------------------------------------------------------
    * 每个功能模块通过 defineModule 注册，拥有：
    *   - 独立的配置命名空间 config.modules[id]（开关/黑名单/专属设置）
-   *   - 独立的站点判定（全局黑名单 + 本模块黑名单 两层）
+   *   - 独立的站点判定（本模块黑名单 + 声明式作用域 hosts 两层）
    *   - 独立的面板区块（自动生成，无需改面板代码）
+   * 声明 hosts 的模块为站点专属：仅命中作用域名时生效，且不设本模块黑名单——
+   * 对这类模块，唯一可填的黑名单条目就是作用域自身，等价于模块开关
    * 模块之间不互相引用状态，仅共享框架提供的基础设施。
    * ========================================================== */
   var MODULE_DEFS = [];
@@ -64,12 +66,14 @@
   // 归一化：确保每个已注册模块的命名空间存在且字段齐全，未知名单一律丢弃
   function normalizeConfig(saved) {
     saved = saved && typeof saved === "object" ? saved : {};
-    var out = { globalBlacklist: sanitizeList(saved.globalBlacklist), modules: {} };
+    var out = { modules: {} };
     MODULE_DEFS.forEach(function (def) {
       var s = (saved.modules && saved.modules[def.id] && typeof saved.modules[def.id] === "object")
         ? saved.modules[def.id] : {};
-      // 只保留模块声明过的设置键（历史遗留字段如 dicePos 迁移后自动丢弃）
-      var m = { enabled: typeof s.enabled === "boolean" ? s.enabled : true, blacklist: sanitizeList(s.blacklist) };
+      // 只保留模块声明过的设置键（历史遗留字段如 dicePos 迁移后自动丢弃）；
+      // hosts 模块不设黑名单，历史遗留条目一并丢弃
+      var m = { enabled: typeof s.enabled === "boolean" ? s.enabled : true };
+      if (!def.hosts) m.blacklist = sanitizeList(s.blacklist);
       var d = def.defaults || {};
       for (var mk in d) {
         if (!Object.prototype.hasOwnProperty.call(d, mk)) continue;
@@ -85,7 +89,6 @@
     o = o && typeof o === "object" ? o : {};
     var f = o.features || {};
     return normalizeConfig({
-      globalBlacklist: o.blacklist || [],
       modules: {
         backToTop: {
           enabled: f.backToTop !== false,
@@ -165,12 +168,21 @@
     return false;
   }
 
-  // 模块在本站点是否生效：模块开关 && 非本机地址 && 不在全局黑名单 && 不在本模块黑名单
+  function moduleDef(id) {
+    for (var i = 0; i < MODULE_DEFS.length; i++) {
+      if (MODULE_DEFS[i].id === id) return MODULE_DEFS[i];
+    }
+    return null;
+  }
+
+  // 模块在本站点是否生效：模块开关 && 非本机地址 && 命中模块作用域（hosts）
+  // && 不在本模块黑名单（仅回到顶部等全站模块有）
   function isModuleEnabledHere(id) {
     if (isLocalAddress()) return false;
     var m = config && config.modules[id];
     if (!m || !m.enabled) return false;
-    if (isBlacklistedHere(config.globalBlacklist)) return false;
+    var def = moduleDef(id);
+    if (def && def.hosts && !isBlacklistedHere(def.hosts)) return false;
     if (isBlacklistedHere(m.blacklist)) return false;
     return true;
   }
@@ -179,7 +191,8 @@
     var m = config && config.modules[id];
     if (!m || !m.enabled) return { on: false, text: "已关闭" };
     if (isLocalAddress()) return { on: false, text: "本机地址已禁用" };
-    if (isBlacklistedHere(config.globalBlacklist)) return { on: false, text: "全局黑名单" };
+    var def = moduleDef(id);
+    if (def && def.hosts && !isBlacklistedHere(def.hosts)) return { on: false, text: "非适用站点" };
     if (isBlacklistedHere(m.blacklist)) return { on: false, text: "本模块黑名单" };
     return { on: true, text: "已启用" };
   }
@@ -292,8 +305,6 @@
       "align-items:center;gap:8px;flex-wrap:wrap;}",
       ".wb-body h3 .wb-chip{margin-left:auto;}",
       ".wb-check{display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:400;}",
-      ".wb-host{font-family:Consolas,Monaco,monospace;font-size:12px;",
-      "background:rgba(128,128,128,.12);padding:2px 6px;border-radius:4px;}",
       ".wb-chip{font-size:12px;padding:2px 8px;border-radius:999px;font-weight:600;}",
       ".wb-chip.on{background:#dcfce7;color:#15803d;}",
       ".wb-chip.off{background:#fee2e2;color:#b91c1c;}",
@@ -505,107 +516,6 @@
     onResize: function () { applyBallPos(); },
     renderSettings: function (box) {
       box.appendChild(panelActionButton("reset-ball", "重置悬浮球位置"));
-    }
-  });
-
-  /* ==========================================================
-   * 三之二、模块：防页面自动跳顶（配置命名空间 modules.scrollGuard）
-   * ----------------------------------------------------------
-   * 部分站点（如雪球用户主页）在滚到列表底部时会整块重渲染，文档高度瞬间
-   * 塌陷，浏览器把 scrollTop 夹回 0 —— 页面「自己跳回顶部」，而全过程没有
-   * 任何 scrollTo / scrollTop 赋值，油猴侧无法提前拦截，只能事后还原。
-   * 判定条件（全部满足才动手）：
-   *   1) 一次滚动里位置下坠超过 minJump（默认 1200px）且落到顶部 60px 内；
-   *   2) 不是我们自己（悬浮球/菜单）发起的回顶；
-   *   3) 最近 quietMs 内用户没点过任何东西（排除站点自带的回顶按钮）；
-   *   4) 地址没变（排除跳转与 SPA 路由切换）；
-   *   5) 页面可见。
-   * 还原最多重试约 1.2s：站点重渲染期间文档高度可能暂时为 0，一次性
-   * scrollTo 会被夹住，必须等内容恢复后再补位。
-   * ========================================================== */
-  var guardLastY = 0;       // 上一次已知滚动位置
-  var guardLastActAt = 0;   // 最近一次用户主动交互（点击 / 按键）时间
-  var guardLastHref = "";   // 最近一次已知地址
-  var guardBusy = false;    // 正在还原，期间不处理自身产生的滚动
-  var guardTripped = 0;     // 命中次数
-  var guardHooked = false;  // 交互监听只挂一次（ensureUI 可能重建 UI）
-
-  function guardRestore(targetY) {
-    guardBusy = true;
-    var tries = 0;
-    (function restore() {
-      tries++;
-      window.scrollTo(0, targetY);
-      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
-      if (Math.abs(y - targetY) > 8 && tries < 12) { setTimeout(restore, 100); return; }
-      setTimeout(function () {
-        guardBusy = false;
-        guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
-      }, 200);
-    })();
-  }
-
-  function guardOnScroll() {
-    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
-    if (guardBusy) { guardLastY = y; return; }
-    var prev = guardLastY;
-    guardLastY = y;
-    if (!config || document.hidden || !isModuleEnabledHere("scrollGuard")) return;
-    if (location.href !== guardLastHref) { guardLastHref = location.href; return; }
-    var m = config.modules.scrollGuard || {};
-    var minJump = parseFloat(m.minJump) || 1200;
-    var quietMs = parseFloat(m.quietMs) || 800;
-    if (prev - y < minJump || y > 60) return;               // 不是「一大截直接归零」
-    if (Date.now() - guardSelfAt < 2000) return;            // 我们自己的回顶
-    if (Date.now() - guardLastActAt < quietMs) return;      // 用户刚点过/按过键（多为站内回顶按钮、Home 键）
-    guardTripped++;
-    guardRestore(prev);
-    if (guardTripped === 1) toast("已阻止页面自动跳回顶部");
-  }
-
-  defineModule({
-    id: "scrollGuard",
-    label: "防页面自动跳顶",
-    icon: "🛡",
-    defaults: { minJump: 1200, quietMs: 800 },
-    mount: function () {
-      guardLastHref = location.href;
-      guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
-      if (guardHooked) return;
-      guardHooked = true;
-      // 点击与按键都视为「用户主动操作」：站内自带回顶按钮、Home / Ctrl+Home
-      // 都会让位置一次性归零，这些都不该被还原
-      document.addEventListener("click", function () {
-        guardLastActAt = Date.now();
-      }, true);
-      document.addEventListener("keydown", function () {
-        guardLastActAt = Date.now();
-      }, true);
-    },
-    refresh: function () {
-      guardLastHref = location.href;
-      guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
-    },
-    onScroll: function () { guardOnScroll(); },
-    renderSettings: function (box) {
-      var mk = function (labelText, key, val, min, max, step) {
-        var label = document.createElement("label");
-        label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
-        label.textContent = labelText;
-        var inp = document.createElement("input");
-        inp.type = "number";
-        inp.min = String(min);
-        inp.max = String(max);
-        inp.step = String(step);
-        inp.value = String(val);
-        inp.style.cssText = "width:90px;";
-        inp.setAttribute("data-mod-setting", "scrollGuard");
-        inp.setAttribute("data-setting-key", key);
-        label.appendChild(inp);
-        return label;
-      };
-      box.appendChild(mk("触发下坠阈值 (px)：", "minJump", 1200, 400, 8000, 100));
-      box.appendChild(mk("点击后静默 (ms)：", "quietMs", 800, 0, 3000, 100));
     }
   });
 
@@ -1131,13 +1041,15 @@
     id: "biliRandom",
     label: "B站合集随机播放",
     icon: "🎲",
+    hosts: ["www.bilibili.com"],
     defaults: {},
     mount: function () { hookBiliRoute(); },
     refresh: function () { onRouteRefresh(); }
   });
 
   /* ==========================================================
-   * 五、模块：雪球隐藏右侧栏并拉宽正文（配置命名空间 modules.xueqiuWide）
+   * 五、模块：雪球优化（配置命名空间 modules.xueqiuWide）
+   * 隐藏右侧栏并拉宽正文 + 防页面自动跳顶（内嵌能力，无独立开关）
    * ----------------------------------------------------------
    * 基于雪球线上 DOM 实测（Firecrawl 渲染抓取）实现两层策略：
    * 1) 精确选择器：首页/时间线页两栏为 AnonymousHome_container_2te 容器，
@@ -1365,13 +1277,87 @@
     }
   }
 
+  /* ---------------- 防页面自动跳顶（内嵌于雪球模块，随模块开关生效） ----------------
+   * 雪球用户主页滚到列表底部会整块重渲染，文档高度瞬间塌陷，浏览器把
+   * scrollTop 夹回 0 —— 页面「自己跳回顶部」，全过程没有任何 scrollTo /
+   * scrollTop 赋值，油猴侧无法提前拦截，只能事后还原。判定条件（全部满足
+   * 才动手）：
+   *   1) 一次滚动里位置下坠超过 1200px 且落到顶部 60px 内；
+   *   2) 不是我们自己（悬浮球/菜单）发起的回顶（guardSelfAt）；
+   *   3) 最近 800ms 内用户没点过任何东西（排除站点自带的回顶按钮）；
+   *   4) 地址没变（排除跳转与 SPA 路由切换）；
+   *   5) 页面可见。
+   * 还原最多重试约 1.2s：站点重渲染期间文档高度可能暂时为 0，一次性
+   * scrollTo 会被夹住，必须等内容恢复后再补位。
+   * ========================================================== */
+  var guardLastY = 0;       // 上一次已知滚动位置
+  var guardLastActAt = 0;   // 最近一次用户主动交互（点击 / 按键）时间
+  var guardLastHref = "";   // 最近一次已知地址
+  var guardBusy = false;    // 正在还原，期间不处理自身产生的滚动
+  var guardTripped = 0;     // 命中次数（仅用于首次提示）
+  var guardHooked = false;  // 交互监听只挂一次（ensureUI 可能重建 UI）
+
+  function guardRestore(targetY) {
+    guardBusy = true;
+    var tries = 0;
+    (function restore() {
+      tries++;
+      window.scrollTo(0, targetY);
+      var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+      if (Math.abs(y - targetY) > 8 && tries < 12) { setTimeout(restore, 100); return; }
+      setTimeout(function () {
+        guardBusy = false;
+        guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+      }, 200);
+    })();
+  }
+
+  function guardOnScroll() {
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+    if (guardBusy) { guardLastY = y; return; }
+    var prev = guardLastY;
+    guardLastY = y;
+    if (!config || document.hidden || !isModuleEnabledHere("xueqiuWide")) return;
+    if (location.href !== guardLastHref) { guardLastHref = location.href; return; }
+    if (prev - y < 1200 || y > 60) return;                  // 不是「一大截直接归零」
+    if (Date.now() - guardSelfAt < 2000) return;            // 我们自己的回顶
+    if (Date.now() - guardLastActAt < 800) return;          // 用户刚点过/按过键（多为站内回顶按钮、Home 键）
+    guardTripped++;
+    guardRestore(prev);
+    if (guardTripped === 1) toast("已阻止页面自动跳回顶部");
+  }
+
+  function hookGuardUserActivity() {
+    guardLastHref = location.href;
+    guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    if (guardHooked) return;
+    guardHooked = true;
+    // 点击与按键都视为「用户主动操作」：站内自带回顶按钮、Home / Ctrl+Home
+    // 都会让位置一次性归零，这些都不该被还原
+    document.addEventListener("click", function () {
+      guardLastActAt = Date.now();
+    }, true);
+    document.addEventListener("keydown", function () {
+      guardLastActAt = Date.now();
+    }, true);
+  }
+
   defineModule({
     id: "xueqiuWide",
-    label: "雪球隐藏右侧栏",
+    label: "雪球优化（隐藏右侧栏 / 防跳顶）",
     icon: "📈",
+    hosts: ["xueqiu.com"],
     defaults: { middleWidth: 0 }, // 中间栏宽度 px；0 = 自动拉满
-    mount: function () { startXqWide(); applyXqWide(); },
-    refresh: function () { applyXqWide(); },
+    mount: function () {
+      startXqWide(); applyXqWide();
+      hookGuardUserActivity();
+    },
+    refresh: function () {
+      applyXqWide();
+      guardLastHref = location.href;
+      guardLastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+    },
+    onScroll: function () { guardOnScroll(); },
     renderSettings: function (box) {
       var label = document.createElement("label");
       label.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
@@ -1443,6 +1429,7 @@
     id: "xSidebarHide",
     label: "X（推特）隐藏右侧栏",
     icon: "🐦",
+    hosts: ["x.com", "twitter.com"],
     defaults: { mainWidth: 0 }, // 主栏宽度 px；0 = 保持 X 默认
     mount: function () { applyXSidebarHide(); },
     refresh: function () { applyXSidebarHide(); },
@@ -1492,24 +1479,6 @@
     /* 内容区 */
     var body = el("div", "wb-body");
 
-    /* 全局黑名单（总闸） */
-    var secG = el("section");
-    var hG = el("h3");
-    hG.appendChild(document.createTextNode("🌐 全局黑名单（禁用所有功能）· 当前网站 "));
-    var hostCode = el("code", "wb-host");
-    hG.appendChild(hostCode);
-    secG.appendChild(hG);
-    var taG = el("textarea");
-    taG.id = "wb-global-blacklist";
-    taG.spellcheck = false;
-    taG.placeholder = "每行一条，例如：\nexample.com\n*.foo.com";
-    secG.appendChild(taG);
-    var rowG = el("div", "wb-btnrow");
-    rowG.appendChild(panelActionButton("add-global", "＋ 把当前网站加入全局黑名单"));
-    rowG.appendChild(panelActionButton("remove-global", "从全局黑名单移除"));
-    secG.appendChild(rowG);
-    body.appendChild(secG);
-
     /* 各模块区块（自动生成） */
     MODULE_DEFS.forEach(function (def) {
       var sec = el("section");
@@ -1529,16 +1498,24 @@
       h.appendChild(chip);
       sec.appendChild(h);
 
-      var ta = el("textarea", "small");
-      ta.setAttribute("data-mod-blacklist", def.id);
-      ta.spellcheck = false;
-      ta.placeholder = "本模块黑名单（仅禁用本功能），每行一条";
-      sec.appendChild(ta);
+      if (def.hosts) {
+        // 站点专属模块不设黑名单：能填的域名只有作用域自身，等价于模块开关
+        var scope = el("div", "wb-hint");
+        scope.style.margin = "4px 0";
+        scope.textContent = "仅适用于：" + def.hosts.join("、");
+        sec.appendChild(scope);
+      } else {
+        var ta = el("textarea", "small");
+        ta.setAttribute("data-mod-blacklist", def.id);
+        ta.spellcheck = false;
+        ta.placeholder = "本模块黑名单（仅禁用本功能），每行一条";
+        sec.appendChild(ta);
 
-      var row = el("div", "wb-btnrow");
-      row.appendChild(panelActionButton("add:" + def.id, "＋ 把当前网站加入本模块黑名单"));
-      row.appendChild(panelActionButton("remove:" + def.id, "从本模块黑名单移除"));
-      sec.appendChild(row);
+        var row = el("div", "wb-btnrow");
+        row.appendChild(panelActionButton("add:" + def.id, "＋ 把当前网站加入本模块黑名单"));
+        row.appendChild(panelActionButton("remove:" + def.id, "从本模块黑名单移除"));
+        sec.appendChild(row);
+      }
 
       if (def.renderSettings) {
         var box = el("div", "wb-btnrow");
@@ -1552,7 +1529,7 @@
     var hint = el("p", "wb-hint");
     hint.innerHTML =
       "黑名单规则支持：<code>example.com</code>（同时匹配所有子域名）、<code>*.example.com</code>、<code>*</code>（全部网站）。" +
-      "<b>全局黑名单</b>内的网站禁用所有功能；<b>模块黑名单</b>只禁用对应模块，互不影响。配置保存在 Tampermonkey 存储中。";
+      "<b>模块黑名单</b>只禁用对应模块，互不影响；站点专属模块自动限定作用域名，仅在声明的网站内生效。配置保存在 Tampermonkey 存储中。";
     body.appendChild(hint);
 
     card.appendChild(body);
@@ -1580,8 +1557,6 @@
       var act = btn.getAttribute("data-act");
       if (act === "save") saveFromPanel();
       else if (act === "close") closePanel();
-      else if (act === "add-global") addHostToTextarea(taG);
-      else if (act === "remove-global") removeHostFromTextarea(taG);
       else if (act.indexOf("add:") === 0) addHostToTextarea(moduleTa(act.slice(4)));
       else if (act.indexOf("remove:") === 0) removeHostFromTextarea(moduleTa(act.slice(4)));
       else if (act === "reset-ball") {
@@ -1628,7 +1603,6 @@
   function openPanel() {
     if (!config) return;
     ensureShadowRoot();
-    panel.querySelector("#wb-global-blacklist").value = (config.globalBlacklist || []).join("\n");
     MODULE_DEFS.forEach(function (def) {
       var m = config.modules[def.id] || {};
       var cb = panel.querySelector('input[data-mod-enable="' + def.id + '"]');
@@ -1653,8 +1627,6 @@
 
   function refreshSiteStatus() {
     if (!panel) return;
-    var hostEl = panel.querySelector(".wb-host");
-    if (hostEl) hostEl.textContent = location.hostname || "(未知)";
     MODULE_DEFS.forEach(function (def) {
       var chip = panel.querySelector('[data-mod-chip="' + def.id + '"]');
       if (!chip) return;
@@ -1666,13 +1638,14 @@
 
   function saveFromPanel() {
     if (!config) return;
-    config.globalBlacklist = parseLines(panel.querySelector("#wb-global-blacklist").value);
     MODULE_DEFS.forEach(function (def) {
       var m = config.modules[def.id] || (config.modules[def.id] = {});
       var cb = panel.querySelector('input[data-mod-enable="' + def.id + '"]');
       m.enabled = !cb || cb.checked;
-      var ta = moduleTa(def.id);
-      m.blacklist = ta ? parseLines(ta.value) : (m.blacklist || []);
+      if (!def.hosts) {
+        var ta = moduleTa(def.id);
+        m.blacklist = ta ? parseLines(ta.value) : (m.blacklist || []);
+      }
       var d = def.defaults || {};
       for (var k in d) {
         if (!Object.prototype.hasOwnProperty.call(d, k)) continue;
@@ -1737,6 +1710,8 @@
    *   label: "功能名称",              // 面板显示名
    *   icon: "🔧",                    // 面板显示图标
    *   defaults: { yourSetting: 1 },  // 模块专属默认配置（自动隔离存储与迁移）
+   *   hosts: ["example.com"],        // 可选：作用域名白名单（含子域名）。声明后模块
+   *                                  // 仅在命中域名的站点生效，面板不再生成模块黑名单
    *   mount: function (shadowRoot) { /* 构建模块 UI (注释内避免嵌套) *\/ },
    *   refresh: function () { /* 配置变化/重建后刷新状态 *\/ },
    *   onScroll: function () {},      // 可选：页面滚动钩子
@@ -1745,7 +1720,7 @@
    * });
    *
    * 模块内判定是否生效：isModuleEnabledHere("yourFeature")
-   *   = 模块开关开启 && 不在全局黑名单 && 不在本模块黑名单
-   * 面板的「启用开关 + 模块黑名单」区块会自动生成，无需修改面板代码。
+   *   = 模块开关开启 && （未声明 hosts 或命中 hosts）&& 不在全局黑名单 && 不在本模块黑名单
+   * 面板的「启用开关 + 模块黑名单（仅全站模块）」区块会自动生成，无需修改面板代码。
    * ========================================================== */
 })();
