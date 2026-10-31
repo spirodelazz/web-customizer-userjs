@@ -23,14 +23,24 @@ HOME = """<!doctype html><html><head><meta charset="utf-8"><style>
 </div></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
+# 帖子详情页：线上实测结构（article__page > article_out_container >
+# 主内容列 + home__col--rt），正文列里还嵌了一张「左文右图」卡片
 ARTICLE = """<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box} body{margin:0}
+*{box-sizing:border-box} body{margin:0;font:14px/1.5 sans-serif}
+.article__page{width:1150px;margin:0 auto}
+.article_out_container{display:flex;width:1060px;margin:0 auto;align-items:flex-start;gap:20px}
+.article__main{flex:1 1 auto;min-width:0;height:1200px;background:#fff}
+.post_card{display:flex;width:760px;height:600px;background:#fafafa}
+.post_text{flex:1 1 auto;height:400px}
+.post_img{flex:0 0 300px;height:300px;background:#eee}
+.home__col--rt{flex:0 0 280px;width:280px;height:900px;background:#f7f7f7}
 </style></head><body>
 <script>%s</script>
-<div id="app"><div class="Article_layout_wrap">
-<div class="Article_card_row" style="display:flex;width:1200px;margin:0 auto">
-<div class="Article_text" style="flex:1 1 auto;height:600px;background:#fafafa">text</div>
-<div class="Article_imgcard" style="flex:0 0 300px;height:400px;background:#eee">img</div>
+<div id="app"><div class="article__page"><div class="article_out_container harf_margin">
+<div class="article__main"><div class="post_card">
+<div class="post_text">text</div><div class="post_img">img</div>
+</div></div>
+<div class="home__col--rt">hot</div>
 </div></div></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
@@ -172,16 +182,19 @@ with sync_playwright() as p:
     check("A7 重新启用后规则再次生效", st3["rtDisplay"] == "none" and st3["styleExists"], st3)
     ctx.close()
 
-    # ---- B: 正文内两列不得被当成主栏+侧栏 ----
-    ctx, pg = new_page(ARTICLE, "https://xueqiu.com/a/article")
+    # ---- B: 帖子详情页（线上真实结构）右栏要隐藏，正文内的两列卡片不能误伤 ----
+    ctx, pg = new_page(ARTICLE, "https://xueqiu.com/5124430882/414827075")
     pg.wait_for_timeout(2500)
     b = pg.evaluate("""() => ({
-      done: document.querySelectorAll('[data-wb-xq-done]').length,
-      side: document.querySelectorAll('[data-wb-xq-side]').length,
-      imgDisplay: getComputedStyle(document.querySelector('.Article_imgcard')).display
+      rt: getComputedStyle(document.querySelector('.home__col--rt')).display,
+      scope: document.querySelector('.article_out_container').getAttribute('data-wb-xq-scope'),
+      img: getComputedStyle(document.querySelector('.post_img')).display,
+      sideMarks: document.querySelectorAll('[data-wb-xq-side]').length,
+      mainW: Math.round(document.querySelector('.article__main').getBoundingClientRect().width)
     })""")
-    check("B1 正文内两列未被误标记", b["done"] == 0 and b["side"] == 0, b)
-    check("B2 正文内的图片卡未被隐藏", b["imgDisplay"] != "none", b["imgDisplay"])
+    check("B1 详情页右栏被隐藏", b["rt"] == "none" and b["scope"] == "1", b)
+    check("B2 正文内两列卡片未被隐藏", b["img"] != "none" and b["sideMarks"] == 0, b)
+    check("B3 详情页主内容列拉宽", b["mainW"] > 750, b["mainW"])
     ctx.close()
 
     # ---- C: 非正文页的几何兜底仍然生效 ----

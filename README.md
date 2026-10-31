@@ -4,7 +4,7 @@
 
 **模块化的网页定制工具箱 · Tampermonkey 用户脚本**
 
-[![Version](https://img.shields.io/badge/version-2.8.2-0078D4.svg)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/version-2.8.3-0078D4.svg)](web-customizer.user.js)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tampermonkey](https://img.shields.io/badge/requires-Tampermonkey-00485B.svg)](https://www.tampermonkey.net/)
 [![CI](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml/badge.svg)](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml)
@@ -129,6 +129,7 @@ web-customizer-userjs/
 ├── diagnostic/xq-console-diagnostic.js  雪球 DOM 诊断脚本（Console 手动执行）
 ├── diagnostic/verify-xq-fixes.py        雪球模块场景验证（无头 Chromium）
 ├── diagnostic/perf-compare-xq.py        雪球模块布局读取次数对比
+├── diagnostic/live-check-xq.py          线上真实页面巡检（右栏隐藏 / 误标记 / 异常）
 ├── CHANGELOG.md
 └── .github/workflows/ci.yml         CI：构建一致性校验 + node --check
 ```

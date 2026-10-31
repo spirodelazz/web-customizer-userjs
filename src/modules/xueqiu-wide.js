@@ -27,11 +27,15 @@
   var xqDisplayDirty = true; // 需要重新判定主栏 display（窗口缩放 / 路由切换后）
   var xqDynStyle = null;
 
-  // 这些容器内部一律不改写：正文、弹窗、抽屉里经常也有「左文右图」两列，
-  // 按几何特征会被误判成主栏 + 侧栏，隐藏掉的其实是真实内容
+  // 这些容器内部一律不改写：弹窗、抽屉、浮层里也可能出现「左文右图」两列，
+  // 按几何特征会被误判成主栏 + 侧栏，隐藏掉的其实是真实内容。
+  // 注意不能按 class 含 "article" 来拦——雪球帖子详情页的页面级布局容器
+  // 本身就叫 article_out_container（article__page > article_out_container >
+  // 主内容列 + home__col--rt），按类名拦会把整个详情页的规则一起废掉。
+  // 正文内部的卡片靠另外两道闸挡住：容器宽度必须 ≥900px，且只扫 body 往下 5 层。
   var XQ_DENY_SEL = 'article,[role="dialog"],[aria-modal="true"],' +
-    '[class*="article"],[class*="Article"],[class*="modal"],[class*="Modal"],' +
-    '[class*="drawer"],[class*="Drawer"],[class*="popup"],[class*="Popup"]';
+    '[class*="modal"],[class*="Modal"],[class*="drawer"],[class*="Drawer"],' +
+    '[class*="popup"],[class*="Popup"]';
 
   var XQ_SCAN_DEPTH = 5;     // 布局层扫描深度上限（body 往下）
   var XQ_MAX_CHILDREN = 40;  // 直接子元素多于此值即视为列表容器，不再往里扫
@@ -208,11 +212,16 @@
     if (!side) return null;
     // 浮层（回到顶部、客服、播放器等）不是栏位，隐藏它只会让页面少个按钮又帮不上忙
     if (getComputedStyle(side.el).position === "fixed") return null;
+    // 列自身也要过一遍拦截：首页的登录弹窗 newLogin_modal__login 就作为
+    // 横幅容器的第二个子元素出现过，几何特征与「右侧窄列」完全一致，
+    // 被标记后会一直保持 display:none，连登录框都打不开
+    if (side.el.closest && side.el.closest(XQ_DENY_SEL)) return null;
     // 主栏：侧栏左侧最宽、且与侧栏垂直并排的兄弟元素
     var main = null;
     for (var m = 0; m < kids.length; m++) {
       var kid = kids[m];
       if (kid.el === side.el || kid.r.left >= side.r.left) continue;
+      if (kid.el.closest && kid.el.closest(XQ_DENY_SEL)) continue; // 弹窗/浮层不参与
       if (kid.r.bottom < side.r.top + 50 || kid.r.top > side.r.bottom - 50) continue;
       if (!main || kid.r.width > main.r.width) main = kid;
     }
