@@ -2,6 +2,17 @@
 
 本项目所有版本变更记录。版本号遵循语义化版本，最新条目在最前。
 
+## [2.8.4] - 2026-10-31
+
+修复用户主页（`/u/xxx`）滚动时右侧栏偶尔闪出：
+
+- **用户主页是第三套命名**：整页没有任何 `col--` 类名，布局是 `.profiles__main__container`（960 宽）里放主内容列 + `.profiles__side`（280 固定宽）。此前的精确规则（`home__col--rt` / `user__col--right`）全落空，这一页的右栏从头到尾只靠几何兜底撑着，兜底标记一被撤销就露出来。
+- **几何兜底在窄视口直接失效**：扫描要求「从 body 往下每层宽度 ≥900px」，用户开着 DevTools（body 873px）时第一个节点就被刷掉，整条链路断掉——这是右栏露出来时 `scope` / `side` / `done` 全为 0 的原因。
+- 新增 `[data-wb-xq-scope] [class*="profiles__side"]{display:none}`，并把 `profiles__side` 加进作用域识别列表；隐藏从此由类名规则保证，不再依赖几何判定。
+- 侧栏被 CSS 隐藏后宽为 0，几何兜底测不到它、也就不会拉宽主栏，因此补一条 CSS 拉宽：`[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"])`。
+- **重渲染不再闪**：站点换掉整个布局容器时 `data-wb-xq-scope` 会一起消失，类名规则瞬间失效。现在记下容器引用，用 `isConnected`（O(1)）在 MutationObserver 回调里同步补标记，不再等 500ms 防抖。
+- `diagnostic/verify-xq-fixes.py` 扩到 32 项，新增用户主页场景（窄视口 860 下隐藏、scope 建立、主栏拉宽、容器被替换后 250ms 内自愈）。
+
 ## [2.8.3] - 2026-10-31
 
 修复帖子详情页右侧栏（热门话题 / 热股榜）仍显示：

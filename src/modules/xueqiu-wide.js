@@ -26,6 +26,9 @@
   var xqScanHit = false;     // 上次扫描是否命中（未命中则降频，避免持续整页读布局）
   var xqDisplayDirty = true; // 需要重新判定主栏 display（窗口缩放 / 路由切换后）
   var xqDynStyle = null;
+  // 最近一次确认的作用域容器。站点重渲染会把布局容器整个换掉，标记随之消失、
+  // 类名规则瞬间失效（右栏闪一下）。用 isConnected 是 O(1) 判断，比重新查询便宜
+  var xqScopeEl = null;
 
   // 这些容器内部一律不改写：弹窗、抽屉、浮层里也可能出现「左文右图」两列，
   // 按几何特征会被误判成主栏 + 侧栏，隐藏掉的其实是真实内容。
@@ -64,8 +67,16 @@
       '[data-wb-xq-scope] [class*="home__col--rt"]{display:none!important;}',
       '[data-wb-xq-scope] [class*="user__col--right"]{display:none!important;}',
       '[data-wb-xq-scope] [class*="user__col--rt"]{display:none!important;}',
+      /* 用户主页是第三套命名（profiles__*）：容器 .profiles__main__container（960 宽）
+         里放主内容列 + .profiles__side（280 固定宽）。这页一个 col-- 类名都没有，
+         上面的规则全落空，此前只靠几何兜底撑着，一旦兜底标记被撤销右栏就会闪出来 */
+      '[data-wb-xq-scope] [class*="profiles__side"]{display:none!important;}',
       '[data-wb-xq-scope] [class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
+      /* 用户主页主内容列：侧栏被 CSS 隐藏后几何兜底测不到它（display:none 的列宽为 0），
+         拉宽只能由 CSS 负责。只作用于容器的直接子元素，排除侧栏自身 */
+      '[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"])' +
+      '{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}',
       /* 登录版首页：中间内容栏宽度可调（动态样式见 wb-xq-wide-dyn），默认拉满 */
       '[data-wb-xq-scope] [class*="user__col--middle"] > div{max-width:none!important;}',
       '.seekball-container{display:none!important;}',
@@ -95,7 +106,7 @@
 
   /* ---------------- 精确选择器的容器限定 ---------------- */
   var XQ_SCOPE_SEL = '[class*="home__col--rt"],[class*="user__col--middle"],' +
-    '[class*="user__col--right"],[class*="user__col--rt"]';
+    '[class*="user__col--right"],[class*="user__col--rt"],[class*="profiles__side"]';
   var XQ_SCOPE_UP = 4;   // 从列往上最多找 4 层容器
 
   // 找出这个列所属的「页面级布局层」：向上找最近一个宽度/高度都够大的祖先。
@@ -121,10 +132,13 @@
   function xqEnsureScope() {
     var cols = document.querySelectorAll(XQ_SCOPE_SEL);
     for (var i = 0; i < cols.length; i++) {
-      // 已经在某个已确认的容器里，不必重复向上找
-      if (cols[i].closest && cols[i].closest("[data-wb-xq-scope]")) continue;
+      var holder = cols[i].closest ? cols[i].closest("[data-wb-xq-scope]") : null;
+      if (holder) { xqScopeEl = holder; continue; }
       var scope = xqFindScope(cols[i]);
-      if (scope) scope.setAttribute("data-wb-xq-scope", "1");
+      if (scope) {
+        scope.setAttribute("data-wb-xq-scope", "1");
+        xqScopeEl = scope;
+      }
     }
   }
 
@@ -139,6 +153,7 @@
       n.removeAttribute("data-wb-xq-done");
       n.removeAttribute("data-wb-xq-scope");
     }
+    xqScopeEl = null;
   }
 
   // 清除单个容器上的全部标记（复检不通过时调用，下一轮扫描按新布局重新判定）
@@ -360,6 +375,15 @@
     if (typeof MutationObserver === "function") {
       xqWideObserver = new MutationObserver(function () {
         if (!isModuleEnabledHere("xueqiuWide")) return;
+        // 重渲染把布局容器换掉时 data-wb-xq-scope 会跟着消失，类名规则随即失效，
+        // 右栏会露出来直到下一轮防抖（500ms）才补回来——这正是「偶尔闪一下」的来源。
+        // isConnected 是 O(1)，发现旧容器已脱离文档就当场补标记，不等防抖。
+        if (xqScopeEl && !xqScopeEl.isConnected) {
+          try {
+            ensureXqWideCss();
+            xqEnsureScope();
+          } catch (e) { /* ignore */ }
+        }
         scheduleXqWide();
       });
       var attach = function () {

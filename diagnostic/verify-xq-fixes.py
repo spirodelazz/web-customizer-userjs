@@ -104,6 +104,24 @@ LOGIN_WRAP = """<!doctype html><html><head><meta charset="utf-8"><style>
 </div></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
+# 用户主页：线上实测结构，容器 .profiles__main__container（960 宽）里放
+# 主内容列 + .profiles__side（280 固定宽）。整页没有任何 col-- 类名。
+# 左主栏浮动 + clearfix 撑开容器高度，与雪球实际排版一致
+PROFILES = """<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:14px/1.5 sans-serif}
+.container{width:960px;margin:0 auto}
+.container::after{content:"";display:table;clear:both}
+.profiles__main{float:left;width:680px;min-height:2000px;background:#fff}
+.profiles__side{float:right;width:280px;min-height:640px;background:#f7f7f7}
+.profiles__side__mod{height:260px;background:#eee;margin:10px}
+</style></head><body>
+<script>%s</script>
+<div id="app"><div class="container profiles__main__container">
+<div class="profiles__main"><div class="feed">posts</div></div>
+<div class="profiles__side"><div class="recommend__users board profiles__side__mod">hot</div></div>
+</div></div>
+<script src="/us.js"></script></body></html>""" % STUB
+
 results = []
 def check(name, ok, detail=""):
     results.append((name, ok, detail))
@@ -277,6 +295,36 @@ with sync_playwright() as p:
     })""")
     check("J1 宽屏下右栏被隐藏", j["right"] == "none", j)
     check("J2 宽屏下中间栏拉宽", j["mW"] > 900, j["mW"])
+    ctx.close()
+
+    # ---- K: 用户主页（profiles__* 命名，无 col-- 类名） ----
+    # 窄视口 860：几何兜底的「从 body 往下每层 ≥900px」会整条断掉，
+    # 只剩类名规则能救——这正是用户 DevTools 停靠时右栏露出来的真实条件
+    ctx, pg = new_page(PROFILES, "https://xueqiu.com/u/5742069252", width=860)
+    pg.wait_for_timeout(2500)
+    k = pg.evaluate("""() => ({
+      side: getComputedStyle(document.querySelector('.profiles__side')).display,
+      scope: document.querySelector('.profiles__main__container').getAttribute('data-wb-xq-scope'),
+      mainW: Math.round(document.querySelector('.profiles__main').getBoundingClientRect().width),
+      bodyW: Math.round(document.body.getBoundingClientRect().width)
+    })""")
+    check("K1 窄视口下用户页侧栏被隐藏", k["side"] == "none", k)
+    check("K2 用户页容器已打 scope 标记", k["scope"] == "1", k)
+    check("K3 用户页主内容列拉宽", k["mainW"] > 900, k["mainW"])
+
+    # K4: 站点重渲染换掉整个布局容器（scope 随之消失）→ 必须立刻自愈，不能等 500ms 防抖
+    pg.evaluate("""() => {
+      const old = document.querySelector('.profiles__main__container');
+      const clone = old.cloneNode(true);
+      clone.removeAttribute('data-wb-xq-scope');   // 重渲染出来的新容器没有我们的标记
+      old.replaceWith(clone);
+    }""")
+    pg.wait_for_timeout(250)
+    k4 = pg.evaluate("""() => ({
+      side: getComputedStyle(document.querySelector('.profiles__side')).display,
+      scope: document.querySelector('.profiles__main__container').getAttribute('data-wb-xq-scope')
+    })""")
+    check("K4 容器被重渲染后侧栏仍隐藏", k4["side"] == "none" and k4["scope"] == "1", k4)
     ctx.close()
 
     # ---- D: 防跳顶误判 / 真跳顶 ----
