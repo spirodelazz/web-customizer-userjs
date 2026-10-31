@@ -52,6 +52,48 @@ body{margin:0} #tall{height:14000px;background:linear-gradient(#fff,#ddd)}
 <div id="tall"></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
+# 登录版首页：左侧导航 + 中间信息流 + 右侧热门话题（user__col--* 这一套 CSS Module）
+LOGIN = """<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box} body{margin:0;font:14px/1.5 sans-serif}
+.UserHome_container_a{display:flex;width:1120px;margin:0 auto;align-items:flex-start}
+.UserHome_user__col--left{flex:0 0 180px;width:180px;height:900px;background:#f2f6ff}
+.UserHome_user__col--middle{flex:0 0 570px;width:570px;height:1400px;background:#fff}
+.UserHome_user__col--right{flex:0 0 360px;width:360px;height:900px;background:#fafafa}
+.UserHome_container_b{display:flex;width:1120px;margin:0 auto;align-items:flex-start}
+.UserHome_container_b .nav{flex:0 0 180px;height:900px;background:#f2f6ff}
+.UserHome_container_b .wrap{flex:1 1 auto;display:flex}
+.UserHome_container_b .m{flex:1 1 auto;height:1400px;background:#fff}
+.UserHome_container_b .aside{flex:0 0 360px;width:360px}
+.UserHome_container_b .r{height:900px;background:#fafafa}
+</style></head><body>
+<script>%s</script>
+<div id="app">
+  <div class="UserHome_container_a">
+    <div class="UserHome_user__col--left">nav</div>
+    <div class="UserHome_user__col--middle">feed</div>
+    <div class="UserHome_user__col--right">hot</div>
+  </div>
+</div>
+<script src="/us.js"></script></body></html>""" % STUB
+
+# 同上，但右栏外面多套了一层窄 aside（考 xqFindScope 向上找容器）
+LOGIN_WRAP = """<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box} body{margin:0}
+.UserHome_container_b{display:flex;width:1120px;margin:0 auto;align-items:flex-start}
+.UserHome_container_b .nav{flex:0 0 180px;height:900px;background:#f2f6ff}
+.UserHome_container_b .wrap{flex:1 1 auto;display:flex}
+.UserHome_container_b .m{flex:1 1 auto;height:1400px;background:#fff}
+.UserHome_container_b .aside{flex:0 0 360px;width:360px}
+.UserHome_container_b .r{height:900px;background:#fafafa}
+</style></head><body>
+<script>%s</script>
+<div id="app"><div class="UserHome_container_b">
+  <div class="nav">nav</div>
+  <div class="wrap"><div class="m">feed</div></div>
+  <div class="aside"><div class="r"><div class="user__col--right">hot</div></div></div>
+</div></div>
+<script src="/us.js"></script></body></html>""" % STUB
+
 results = []
 def check(name, ok, detail=""):
     results.append((name, ok, detail))
@@ -61,8 +103,8 @@ with sync_playwright() as p:
     browser = p.chromium.launch()
     errors = []
 
-    def new_page(html, url):
-        ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+    def new_page(html, url, width=1400):
+        ctx = browser.new_context(viewport={"width": width, "height": 900})
         def handle(route):
             u = route.request.url
             if u.endswith("/us.js"):
@@ -183,6 +225,45 @@ with sync_playwright() as p:
     check("G1 初始按 block 打标", g0 == "block", g0)
     check("G2 主栏改为 flex 后标记降级", g["mark"] == "1", g)
     check("G3 主栏 display 未被 flow-root 覆盖", g["display"] == "flex", g["display"])
+    ctx.close()
+
+    # ---- H: 登录版首页（user__col--*）右栏隐藏 + 中间栏拉宽，左导航不动 ----
+    ctx, pg = new_page(LOGIN, "https://xueqiu.com/")
+    pg.wait_for_timeout(2500)
+    h = pg.evaluate("""() => {
+      const r = document.querySelector('.UserHome_user__col--right');
+      const m = document.querySelector('.UserHome_user__col--middle');
+      const l = document.querySelector('.UserHome_user__col--left');
+      return { right: getComputedStyle(r).display,
+               mW: Math.round(m.getBoundingClientRect().width),
+               lW: Math.round(l.getBoundingClientRect().width),
+               scope: document.querySelector('.UserHome_container_a').getAttribute('data-wb-xq-scope') };
+    }""")
+    check("H1 登录版首页右栏被隐藏", h["right"] == "none", h)
+    check("H2 登录版首页中间栏拉宽", h["mW"] > 700, h["mW"])
+    check("H3 左导航宽度未被动", h["lW"] == 180, h["lW"])
+    check("H4 布局容器已打 scope", h["scope"] == "1", h["scope"])
+    ctx.close()
+
+    # ---- I: 右栏外多套一层窄 aside，作用域要向上找到真正的布局容器 ----
+    ctx, pg = new_page(LOGIN_WRAP, "https://xueqiu.com/")
+    pg.wait_for_timeout(2500)
+    i = pg.evaluate("""() => ({
+      right: getComputedStyle(document.querySelector('.user__col--right')).display,
+      scope: document.querySelector('.UserHome_container_b').getAttribute('data-wb-xq-scope')
+    })""")
+    check("I1 嵌套窄容器下右栏仍被隐藏", i["right"] == "none" and i["scope"] == "1", i)
+    ctx.close()
+
+    # ---- J: 1920 宽屏下容器居中只占 58% 视口，规则仍要命中 ----
+    ctx, pg = new_page(LOGIN, "https://xueqiu.com/", width=1920)
+    pg.wait_for_timeout(2500)
+    j = pg.evaluate("""() => ({
+      right: getComputedStyle(document.querySelector('.UserHome_user__col--right')).display,
+      mW: Math.round(document.querySelector('.UserHome_user__col--middle').getBoundingClientRect().width)
+    })""")
+    check("J1 宽屏下右栏被隐藏", j["right"] == "none", j)
+    check("J2 宽屏下中间栏拉宽", j["mW"] > 900, j["mW"])
     ctx.close()
 
     # ---- D: 防跳顶误判 / 真跳顶 ----

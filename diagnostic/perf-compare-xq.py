@@ -3,7 +3,7 @@ from playwright.sync_api import sync_playwright
 
 NEW = open(r"E:/Project/Github-Repository/web-customizer-userjs/web-customizer.user.js", encoding="utf-8").read()
 OLD = subprocess.run(["git", "-C", r"E:/Project/Github-Repository/web-customizer-userjs",
-                      "show", "HEAD:web-customizer.user.js"],
+                      "show", "d8e5ea0:web-customizer.user.js"],
                      capture_output=True, text=True, encoding="utf-8").stdout
 
 STUB = """
@@ -59,5 +59,5 @@ def run(script, label):
               % (label, r1["rects"], r1["marked"], r2["rects"], r2["marked"]))
         return r1, r2
 
-run(OLD, "旧版")
-run(NEW, "新版")
+run(OLD, "v2.8.0")
+run(NEW, "v2.8.2")

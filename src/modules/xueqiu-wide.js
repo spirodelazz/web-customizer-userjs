@@ -52,10 +52,14 @@
     var style = document.createElement("style");
     style.id = XQ_STYLE_ID;
     style.textContent = [
-      /* 首页/时间线页：右栏隐藏，主栏拉宽（匿名版带构建 hash，登录版无 hash，包含匹配通吃）。
-         规则一律挂在 data-wb-xq-scope 容器下：只有被 xqScopeOk 确认是页面级
+      /* 匿名首页/时间线页：右栏 home__col--rt 隐藏，主栏 home__col--lf 拉宽；
+         登录版首页是另一套 CSS Module——user__col--left（左下导航）+ user__col--middle
+         （信息流）+ user__col--right（热门话题/热股榜），右栏要单独隐藏。
+         规则一律挂在 data-wb-xq-scope 容器下：只有被 xqFindScope 确认是页面级
          布局层的容器才会得到该标记，同一套类名出现在弹窗/卡片里时不再被命中 */
       '[data-wb-xq-scope] [class*="home__col--rt"]{display:none!important;}',
+      '[data-wb-xq-scope] [class*="user__col--right"]{display:none!important;}',
+      '[data-wb-xq-scope] [class*="user__col--rt"]{display:none!important;}',
       '[data-wb-xq-scope] [class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
       /* 登录版首页：中间内容栏宽度可调（动态样式见 wb-xq-wide-dyn），默认拉满 */
@@ -86,29 +90,37 @@
   }
 
   /* ---------------- 精确选择器的容器限定 ---------------- */
-  // 判断某个列所在的容器是否是可安全改写的「页面级布局层」：
-  // 不在正文/弹窗内部、宽度占视口一半以上、有正常高度
-  function xqScopeOk(col) {
-    if (!col || !col.parentElement) return false;
-    if (col.closest && col.closest(XQ_DENY_SEL)) return false;
-    var p = col.parentElement;
-    if (p === document.body || p === document.documentElement) return false;
-    var pr = p.getBoundingClientRect();
-    // 布局层是贴着页面宽度的大块；弹窗 / 卡片即使宽也走不到这里（已被 XQ_DENY_SEL 拦掉），
-    // 用绝对阈值而不是视口比例，宽屏上容器只占视口一半时也能正常识别
-    if (pr.height < 200 || pr.width < 900) return false;
+  var XQ_SCOPE_SEL = '[class*="home__col--rt"],[class*="user__col--middle"],' +
+    '[class*="user__col--right"],[class*="user__col--rt"]';
+  var XQ_SCOPE_UP = 4;   // 从列往上最多找 4 层容器
+
+  // 找出这个列所属的「页面级布局层」：向上找最近一个宽度/高度都够大的祖先。
+  // 不能只看 parentElement——右栏外面常还套一层（container > aside > col，
+  // aside 只有 300px 宽），只看直接父级会判定失败、规则永不生效。
+  // 命中后规则只在该容器子树内生效，弹窗/卡片里复用的同类名不受影响。
+  function xqFindScope(col) {
+    if (!col || !col.parentElement) return null;
+    if (col.closest && col.closest(XQ_DENY_SEL)) return null;
     var cr = col.getBoundingClientRect();
-    if (cr.width < 1 && cr.height < 1) return false; // 列本身不可见，没必要改
-    return true;
+    if (cr.width < 1 && cr.height < 1) return null; // 列本身不可见，没必要改
+    var n = col.parentElement;
+    for (var i = 0; i < XQ_SCOPE_UP; i++) {
+      if (!n || n === document.body || n === document.documentElement) return null;
+      if (n.closest && n.closest(XQ_DENY_SEL)) return null;
+      var r = n.getBoundingClientRect();
+      if (r.width >= 900 && r.height >= 200) return n;
+      n = n.parentElement;
+    }
+    return null;
   }
 
   function xqEnsureScope() {
-    var cols = document.querySelectorAll(
-      '[class*="home__col--rt"],[class*="user__col--middle"]');
+    var cols = document.querySelectorAll(XQ_SCOPE_SEL);
     for (var i = 0; i < cols.length; i++) {
-      var p = cols[i].parentElement;
-      if (!p || p.getAttribute("data-wb-xq-scope") === "1") continue;
-      if (xqScopeOk(cols[i])) p.setAttribute("data-wb-xq-scope", "1");
+      // 已经在某个已确认的容器里，不必重复向上找
+      if (cols[i].closest && cols[i].closest("[data-wb-xq-scope]")) continue;
+      var scope = xqFindScope(cols[i]);
+      if (scope) scope.setAttribute("data-wb-xq-scope", "1");
     }
   }
 
@@ -256,9 +268,11 @@
         if (k.hasAttribute("data-wb-xq-done")) continue;        // 已标记：整棵子树跳过
         if (k.closest && k.closest(XQ_DENY_SEL)) continue;      // 正文 / 弹窗内部不动
         var r = k.getBoundingClientRect();
-        // 宽度/高度不达标就没必要往下找：布局层一定是贴着视口宽度的大块
+        // 宽度/高度不达标就没必要往下找：布局层一定是宽度近千的大块。
+        // 不按视口比例卡下限——雪球容器居中且有 max-width，宽屏上只占视口
+        // 一半左右（1120 / 1920），按 60% 卡会整页识别不到
         if (r.height < 200 || r.width < 900) continue;
-        if (vw && (r.width > vw * 1.1 || r.width < vw * 0.6)) continue;
+        if (vw && r.width > vw * 1.1) continue;
         // 只有一个子元素的包装层本身不可能是「主栏 + 侧栏」，但要继续往下走，
         // 否则 body > #app > .wrap > .layout 这种单链包装会让扫描整条断掉
         if (k.children.length >= 2 && k.children.length <= XQ_MAX_CHILDREN) {
@@ -301,7 +315,9 @@
       // 否则 SPA 从启发式页面切到带精确类名的页面时，旧标记永远不会被复检
       xqRevalidateMarks();
     }
-    if (document.querySelector("[data-wb-xq-scope]")) return;
+    // 精确选择器命中时仍然继续跑几何兜底：雪球改版换类名（匿名首页是
+    // home__col--*、登录版是 user__col--*）时精确规则会静默失效，兜底是
+    // 唯一的保险。扫描已按布局层剪枝，一轮只有个位数次布局读取。
     // 需要启发式扫描的页面按上一轮是否命中降到 2s / 4s
     if (now - xqScanAt < (xqScanHit ? 2000 : 4000)) return;
     xqScanAt = now;
