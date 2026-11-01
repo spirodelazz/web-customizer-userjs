@@ -4,7 +4,7 @@
 
 **模块化的网页定制工具箱 · Tampermonkey 用户脚本**
 
-[![Version](https://img.shields.io/badge/version-2.8.4-0078D4.svg)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/version-2.8.5-0078D4.svg)](web-customizer.user.js)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tampermonkey](https://img.shields.io/badge/requires-Tampermonkey-00485B.svg)](https://www.tampermonkey.net/)
 [![CI](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml/badge.svg)](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml)
@@ -20,7 +20,7 @@
 | 模块 | ID | 作用域 | 说明 |
 | --- | --- | --- | --- |
 | 回到顶部 | `backToTop` | 全站 | 可拖拽悬浮球 + 滚动进度环，下滑超过 200px 才显示 |
-| 雪球优化 | `xueqiuWide` | 雪球 | 隐藏右侧栏并拉宽正文（精确选择器 + 几何识别双层策略）；站点重渲染把 `scrollTop` 夹回 0 时自动还原滚动位置（防页面自动跳顶，点击 / 按键 / 路由跳转不干预） |
+| 雪球优化 | `xueqiuWide` | 雪球 | 隐藏右侧栏并拉宽正文（精确选择器 + 几何识别双层策略，拉宽后受「正文最大宽度」版心约束并居中）；站点重渲染把 `scrollTop` 夹回 0 时自动还原滚动位置（防页面自动跳顶，点击 / 按键 / 路由跳转不干预） |
 | 合集随机播放 | `biliRandom` | B 站 | 合集标题旁注入「随机播放」，当前视频置顶、其余随机；SPA 免刷新连播，顺序跨刷新续播 |
 | X 隐藏右侧栏 | `xSidebarHide` | x.com / twitter.com | 纯 CSS 隐藏 `[data-testid="sidebarColumn"]`，无定时器、无 DOM 扫描 |
 

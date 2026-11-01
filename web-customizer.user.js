@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         网页定制助手
 // @namespace    https://github.com/spirodelazz/web-customizer-userjs
-// @version      2.8.4
+// @version      2.8.5
 // @description  网页定制化脚本工具箱（模块化架构）：每个功能模块拥有独立开关、独立作用域与专属设置，互不干扰；站点专属模块自动限定作用域名。内置「回到顶部」悬浮球、「防页面自动跳顶」滚动位置守护、B站合集随机播放（当前视频置顶 + SPA 免刷新连播 + 顺序跨刷新续播 + 定期整页换血防内存累积）、雪球隐藏右侧栏并拉宽正文（运行时布局识别，改版不失效）、X（推特）隐藏右侧栏（过滤搜索/订阅 Premium/新鲜事/推荐关注）。按文末扩展点可无侵入添加新模块。
 // @author       spirodelazz
 // @homepageURL  https://github.com/spirodelazz/web-customizer-userjs
@@ -1150,9 +1150,10 @@
       '[data-wb-xq-scope] [class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
       /* 用户主页主内容列：侧栏被 CSS 隐藏后几何兜底测不到它（display:none 的列宽为 0），
-         拉宽只能由 CSS 负责。只作用于容器的直接子元素，排除侧栏自身 */
+         拉宽只能由 CSS 负责。只作用于容器的直接子元素，排除侧栏自身。
+         max-width 与居中不在这里写死，由 wb-xq-wide-dyn 按「正文最大宽度」设置生成 */
       '[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"])' +
-      '{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}',
+      '{width:auto!important;flex:1 1 auto!important;float:none!important;}',
       /* 登录版首页：中间内容栏宽度可调（动态样式见 wb-xq-wide-dyn），默认拉满 */
       '[data-wb-xq-scope] [class*="user__col--middle"] > div{max-width:none!important;}',
       '.seekball-container{display:none!important;}',
@@ -1160,7 +1161,7 @@
          float:none + width:auto 兼容 float/block 布局；互不冲突 */
       "[data-wb-xq-side]{display:none!important;}",
       "[data-wb-xq-main]{flex:1 1 auto!important;grid-column:1/-1!important;" +
-      "width:auto!important;max-width:none!important;float:none!important;}",
+      "width:auto!important;float:none!important;}",
       /* 原主栏是浮动列时，float:none 会丢失 BFC，内部 clearfix 的 clear:both
          会连外层更高的浮动（如个股页左侧 1380px 导航）一起清除，
          把行情区/图表整块推到导航下方（正文上方出现大片空白）→ 用 flow-root 重建 BFC 隔离 */
@@ -1329,17 +1330,33 @@
     container.setAttribute("data-wb-xq-done", "1");
   }
 
-  // 中间栏宽度设置：>300 视为固定像素宽，否则清空规则（默认拉满）
-  // 内容没变就不重写 textContent：改样式表会触发整页样式重算与重排，
-  // 信息流类页面（雪球首页）在滚动/触底加载瞬间被无谓重排，滚动位置容易跟着抖。
+  // 中间栏宽度 + 正文最大宽度：都在这里生成，改一次样式表会触发整页重算，
+  // 所以内容没变就不重写 textContent（信息流页在滚动/触底加载时会被无谓重排）。
+  //
+  // 为什么需要「最大宽度」：隐藏右栏后主栏若跟着容器无上限撑开，容器本身是流式
+  // 宽度（占满视口）时正文会一直顶到屏幕两侧——行长过长、阅读难受。这里给主栏
+  // 一个版心宽度并水平居中，多出来的空间留白，而不是把字排满整屏。
+  var XQ_MAX_WIDTH_DEFAULT = 1000;   // ≈ 雪球自身版心宽度，隐藏侧栏后比原 680 宽但不变形
+  // 被我们拉宽的两类主栏：几何兜底标记的、以及用户主页按类名放开的
+  var XQ_MAIN_SEL = '[data-wb-xq-main],' +
+    '[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"])';
+
   function updateXqDynCss() {
     if (!document.head) return;
     var m = (config && config.modules.xueqiuWide) || {};
     var w = parseFloat(m.middleWidth);
+    var cap = parseFloat(m.maxWidth);
+    if (isNaN(cap)) cap = XQ_MAX_WIDTH_DEFAULT;
     var sel = '[data-wb-xq-scope] [class*="user__col--middle"]';
-    var css = (w > 300)
+    var mid = (w > 300)
       ? sel + '{width:' + w + 'px!important;max-width:none!important;flex:0 0 auto!important;float:none!important;}'
       : sel + '{width:auto!important;max-width:none!important;flex:1 1 auto!important;float:none!important;}';
+    // cap <= 0 视为不限制（拉满），保留原行为
+    var capCss = (cap > 400)
+      ? XQ_MAIN_SEL + '{max-width:' + cap + 'px!important;' +
+        'margin-left:auto!important;margin-right:auto!important;}'
+      : XQ_MAIN_SEL + '{max-width:none!important;}';
+    var css = mid + "\n" + capCss;
     if (xqDynStyle && xqDynStyle.__wbCss === css && document.head.contains(xqDynStyle)) return;
     if (!xqDynStyle || !document.head.contains(xqDynStyle)) {
       xqDynStyle = document.createElement("style");
@@ -1550,7 +1567,9 @@
     label: "雪球优化（隐藏右侧栏 / 防跳顶）",
     icon: "📈",
     hosts: ["xueqiu.com"],
-    defaults: { middleWidth: 0 }, // 中间栏宽度 px；0 = 自动拉满
+    // middleWidth：登录版首页中间栏宽度，0 = 自动拉满
+    // maxWidth：拉宽后正文的版心宽度，0 = 不限制（拉满容器）
+    defaults: { middleWidth: 0, maxWidth: 1000 },
     mount: function () {
       startXqWide(); applyXqWide();
       hookGuardUserActivity();
@@ -1569,19 +1588,24 @@
       scheduleXqWide();
     },
     renderSettings: function (box) {
-      var label = document.createElement("label");
-      label.className = "wb-setting";
-      label.textContent = "中间栏宽度 (px，0=拉满)：";
-      var inp = document.createElement("input");
-      inp.type = "number";
-      inp.min = "0";
-      inp.max = "1600";
-      inp.step = "10";
-      inp.style.cssText = "width:90px;";
-      inp.setAttribute("data-mod-setting", "xueqiuWide");
-      inp.setAttribute("data-setting-key", "middleWidth");
-      label.appendChild(inp);
-      box.appendChild(label);
+      var mk = function (text, key, min, max, step) {
+        var label = document.createElement("label");
+        label.className = "wb-setting";
+        label.textContent = text;
+        var inp = document.createElement("input");
+        inp.type = "number";
+        inp.min = String(min);
+        inp.max = String(max);
+        inp.step = String(step);
+        inp.style.cssText = "width:90px;";
+        inp.setAttribute("data-mod-setting", "xueqiuWide");
+        inp.setAttribute("data-setting-key", key);
+        label.appendChild(inp);
+        box.appendChild(label);
+      };
+      mk("中间栏宽度 (px，0=拉满)：", "middleWidth", 0, 1600, 10);
+      // 拉宽后正文的版心宽度。容器是流式宽度时，不设上限会让文字顶到屏幕两侧
+      mk("正文最大宽度 (px，0=不限)：", "maxWidth", 0, 2400, 50);
     }
   });
   /* ==========================================================

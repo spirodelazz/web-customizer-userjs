@@ -122,6 +122,22 @@ body{margin:0;font:14px/1.5 sans-serif}
 </div></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
+# 用户主页（流体容器版）：容器 width:100%，隐藏侧栏后主栏会撑满整个视口，
+# 用来验证「正文最大宽度」上限是否生效并居中
+PROFILES_FLUID = """<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:14px/1.5 sans-serif}
+.container{width:100%%}
+.container::after{content:"";display:table;clear:both}
+.profiles__main{float:left;width:680px;min-height:1200px;background:#fff}
+.profiles__side{float:right;width:280px;min-height:400px;background:#f7f7f7}
+</style></head><body>
+<script>%s</script>
+<div id="app"><div class="container profiles__main__container">
+<div class="profiles__main"><div class="feed">posts</div></div>
+<div class="profiles__side"><div class="pb">side</div></div>
+</div></div>
+<script src="/us.js"></script></body></html>""" % STUB
+
 results = []
 def check(name, ok, detail=""):
     results.append((name, ok, detail))
@@ -226,7 +242,7 @@ with sync_playwright() as p:
     })""")
     check("C1 兜底识别到主栏+侧栏", c["done"] == 1, c)
     check("C2 兜底侧栏被隐藏", c["sideDisplay"] == "none", c["sideDisplay"])
-    check("C3 兜底主栏拉宽", c["mainW"] > 1200, c["mainW"])
+    check("C3 兜底主栏拉宽（受版心上限约束）", c["mainW"] >= 950, c["mainW"])
 
     # ---- F: 布局翻转（SPA 复用节点后主栏变窄）应自动撤销标记 ----
     pg.evaluate("""() => {
@@ -325,6 +341,22 @@ with sync_playwright() as p:
       scope: document.querySelector('.profiles__main__container').getAttribute('data-wb-xq-scope')
     })""")
     check("K4 容器被重渲染后侧栏仍隐藏", k4["side"] == "none" and k4["scope"] == "1", k4)
+    ctx.close()
+
+    # ---- K5: 流体容器下正文要有版心上限并居中，不能顶到屏幕两侧 ----
+    ctx, pg = new_page(PROFILES_FLUID, "https://xueqiu.com/u/5742069252", width=2000)
+    pg.wait_for_timeout(2500)
+    k5 = pg.evaluate("""() => {
+      const m = document.querySelector('.profiles__main');
+      const r = m.getBoundingClientRect();
+      const cs = getComputedStyle(m);
+      return { w: Math.round(r.width), left: Math.round(r.left),
+               maxW: cs.maxWidth, bodyW: Math.round(document.body.getBoundingClientRect().width),
+               side: getComputedStyle(document.querySelector('.profiles__side')).display };
+    }""")
+    check("K5 流体容器下正文被限制在版心宽度", 995 <= k5["w"] <= 1005, k5)
+    check("K6 版心水平居中", abs(k5["left"] - (k5["bodyW"] - k5["w"]) / 2) <= 2, k5)
+    check("K7 侧栏仍被隐藏", k5["side"] == "none", k5)
     ctx.close()
 
     # ---- D: 防跳顶误判 / 真跳顶 ----
