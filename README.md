@@ -4,7 +4,7 @@
 
 **模块化的网页定制工具箱 · Tampermonkey 用户脚本**
 
-[![Version](https://img.shields.io/badge/version-2.8.5-0078D4.svg)](web-customizer.user.js)
+[![Version](https://img.shields.io/badge/version-2.9.0-0078D4.svg)](web-customizer.user.js)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tampermonkey](https://img.shields.io/badge/requires-Tampermonkey-00485B.svg)](https://www.tampermonkey.net/)
 [![CI](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml/badge.svg)](https://github.com/spirodelazz/web-customizer-userjs/actions/workflows/ci.yml)
@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | 回到顶部 | `backToTop` | 全站 | 可拖拽悬浮球 + 滚动进度环，下滑超过 200px 才显示 |
 | 雪球优化 | `xueqiuWide` | 雪球 | 隐藏右侧栏并拉宽正文（精确选择器 + 几何识别双层策略，拉宽后受「正文最大宽度」版心约束并居中）；站点重渲染把 `scrollTop` 夹回 0 时自动还原滚动位置（防页面自动跳顶，点击 / 按键 / 路由跳转不干预） |
-| 合集随机播放 | `biliRandom` | B 站 | 合集标题旁注入「随机播放」，当前视频置顶、其余随机；SPA 免刷新连播，顺序跨刷新续播 |
+| 随机播放 | `biliRandom` | B 站 | 合集标题旁注入「随机播放」，当前视频置顶、其余随机；SPA 免刷新连播，顺序跨刷新续播。视频列表页（`/list/…`）面板头部注入同名按钮，打乱全量列表后按随机顺序连播；UP 主投稿页「播放全部」旁同理 |
 | X 隐藏右侧栏 | `xSidebarHide` | x.com / twitter.com | 纯 CSS 隐藏 `[data-testid="sidebarColumn"]`，无定时器、无 DOM 扫描 |
 
 框架级能力：
@@ -54,10 +54,14 @@
 | 右键悬浮球 / 点击 ⚙ 角标 | 打开设置面板 |
 | 雪球页面滚动中突然跳回顶部 | 自动还原到原位置（防页面自动跳顶，点击 / 按 Home / 换页不干预） |
 | 点击合集标题旁「随机播放」 | 打乱播放顺序（当前视频置顶），侧栏同步重排并滚回顶部 |
+| 点击播放列表面板头部「随机播放」 | 打乱「UP主的全部视频」全量顺序（当前集置顶），播完按随机顺序连播；再点一次关闭 |
+| 点击投稿页「播放全部」旁「随机播放」 | 从当前页随机挑一集开始，进入列表页后按打乱顺序连播整个列表 |
 | 访问 xueqiu.com | 自动隐藏右侧栏并拉宽正文 |
 | 访问 x.com / twitter.com | 自动隐藏右侧栏，只保留导航与时间线 |
 
 > 随机顺序保存在标签页会话（`sessionStorage`）中，整页刷新后按原顺序续播，关闭标签页清除；每连播 10 集会整页刷新一次以回收播放器内存（约 1~2 秒）。记得打开播放器的「自动连播」。
+>
+> 视频列表页（`/list/…`）的随机播放需要先把整个列表拉完（40 条/页，1900 条的 UP 主约 10~20 秒，界面有进度提示），结果缓存在 `localStorage` 12 小时，同一 UP 主二次点击立即生效；列表页切换视频走整页跳转（B 站没有可用的免刷新接口）。
 
 ## 设置与黑名单
 
@@ -121,7 +125,7 @@ web-customizer-userjs/
 │   │   └── init.js                  初始化与油猴菜单
 │   └── modules/
 │       ├── back-to-top.js           回到顶部悬浮球
-│       ├── bili-random.js           B站合集随机播放
+│       ├── bili-random.js           B站合集/列表随机播放（合集分P + 视频列表页 + 投稿页）
 │       ├── xueqiu-wide.js           雪球优化：隐藏右侧栏并拉宽正文 + 防页面自动跳顶
 │       └── x-sidebar.js             X（推特）隐藏右侧栏
 ├── build.js                         构建脚本：按固定顺序拼接 src/ → 产物
@@ -131,6 +135,8 @@ web-customizer-userjs/
 ├── diagnostic/perf-compare-xq.py        雪球模块布局读取次数对比
 ├── diagnostic/live-check-xq.py          线上真实页面巡检（右栏隐藏 / 误标记 / 异常）
 ├── diagnostic/watch-user-page-scroll.py 用户主页滚动采样（需人工过一次滑屏验证）
+├── diagnostic/test-bili-list-shuffle.py B站列表页随机播放验证（注入产物 → 点按钮 → 断言连播接管）
+├── diagnostic/test-bili-space-shuffle.py B站投稿页随机播放按钮位置与跳转验证
 ├── CHANGELOG.md
 └── .github/workflows/ci.yml         CI：构建一致性校验 + node --check
 ```

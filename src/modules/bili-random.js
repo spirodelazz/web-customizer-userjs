@@ -467,12 +467,359 @@
     });
   }
 
+  /* ==========================================================
+   * 四·B、视频列表播放页（/list/<mid>）随机播放
+   * ----------------------------------------------------------
+   * 列表播放页右侧「UP主的全部视频」面板，B 站只提供 顺序/倒序 两种顺序，
+   * 没有随机。这里在面板头部（顺序播放图标右侧）注入「随机播放」：
+   *   - 数据层：medialist/resource/list 接口按 cursor 翻页拉全量（40/页），
+   *     打乱后写入 sessionStorage；结果另存 localStorage 缓存，二次点击秒开
+   *   - 播放层：当前集置顶并作为起点，接管 video.ended 与 player.next/prev，
+   *     按打乱后的顺序整页跳转续播（列表页切换视频只有 URL 一条可靠通路）
+   *   - 投稿页（space.bilibili.com/<mid>/upload/video）「播放全部」旁注入同名
+   *     按钮：随机取一张卡片，带 #wb-shuffle 跳到列表页由上面的流程接管
+   * ========================================================== */
+  var BILI_LIST_STATE_KEY = "wb_bili_list_shuffle_v1";  // 播放顺序会话状态（sessionStorage）
+  var BILI_LIST_CACHE_PREFIX = "wb_bili_list_cache_v1_"; // 全量列表缓存（localStorage，按 mid 分键）
+  var BILI_LIST_CACHE_TTL = 12 * 3600 * 1000;            // 缓存有效期 12 小时
+  var BILI_LIST_PS = 40;          // 接口单页上限（>40 报 -400）
+  var BILI_LIST_MAX_PAGES = 120;  // 最多 4800 条，防异常接口把循环拖死
+  var BILI_LIST_GAP_MS = 40;      // 翻页间隔，避免高频请求触发风控
+  var BILI_SHUFFLE_HASH = "#wb-shuffle";
+
+  function isBiliListPage() {
+    return location.hostname === "www.bilibili.com" && /^\/list\/\d+/.test(location.pathname);
+  }
+
+  function isBiliSpaceUploadPage() {
+    return location.hostname === "space.bilibili.com" && /^\/\d+\/(upload\/video|video)/.test(location.pathname);
+  }
+
+  function listMid() {
+    var m = location.pathname.match(/^\/list\/(\d+)/);
+    if (m) return m[1];
+    m = location.pathname.match(/^\/(\d+)\//);
+    return m ? m[1] : null;
+  }
+
+  // 当前正在播放的集：面板条目的 active 标记最准（B 站就地切集时不改 URL），
+  // 面板未渲染时退回 URL 的 bvid 参数
+  function listActiveBvid() {
+    var act = document.querySelector(".siglep-active");
+    var item = act && act.closest ? act.closest(".action-list-item-wrap") : null;
+    var key = item && item.getAttribute("data-key");
+    if (key) return key;
+    try { return new URLSearchParams(location.search).get("bvid"); } catch (e) { return null; }
+  }
+
+  function listTotalCount() {
+    var el = document.querySelector(".list-count");
+    var m = el && (el.textContent || "").match(/\/\s*(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function loadListState() {
+    try {
+      var st = JSON.parse(sessionStorage.getItem(BILI_LIST_STATE_KEY) || "null");
+      return (st && st.active && Array.isArray(st.order) && st.order.length) ? st : null;
+    } catch (e) { return null; }
+  }
+
+  function saveListState(st) {
+    try { sessionStorage.setItem(BILI_LIST_STATE_KEY, JSON.stringify(st)); } catch (e) { /* 配额/隐私模式 */ }
+  }
+
+  function clearListState() {
+    try { sessionStorage.removeItem(BILI_LIST_STATE_KEY); } catch (e) { /* ignore */ }
+  }
+
+  function loadListCache(mid) {
+    try {
+      var c = JSON.parse(localStorage.getItem(BILI_LIST_CACHE_PREFIX + mid) || "null");
+      if (!c || !Array.isArray(c.items) || c.items.length < 2) return null;
+      if (Date.now() - (c.at || 0) > BILI_LIST_CACHE_TTL) return null;
+      return c.items;
+    } catch (e) { return null; }
+  }
+
+  function saveListCache(mid, items) {
+    try {
+      localStorage.setItem(BILI_LIST_CACHE_PREFIX + mid,
+        JSON.stringify({ at: Date.now(), items: items }));
+    } catch (e) { /* 配额满时只影响下次速度 */ }
+  }
+
+  // 拉一页列表：返回 { mediaList, hasMore, nextOffset }
+  function fetchListChunk(mid, offset) {
+    var url = "https://api.bilibili.com/x/v1/medialist/resource/list?type=1&biz_id=" + mid +
+      "&otype=2&ps=" + BILI_LIST_PS + "&direction=false&desc=true&sort_field=1&tid=0&with_current=true" +
+      (offset === null || offset === undefined ? "" : "&offset=" + offset);
+    return fetch(url, { credentials: "include" }).then(function (r) { return r.json(); });
+  }
+
+  // 按 cursor 逐页拉全量（接口只认 nextOffset，无法按页码并发）；
+  // 失败重试两次后带着已读到的部分返回，不阻塞用户
+  function fetchListAll(mid, onProgress) {
+    var items = [], seen = {}, offset = null, pages = 0, retry = 0;
+    return new Promise(function (resolve) {
+      function step() {
+        fetchListChunk(mid, offset).then(function (j) {
+          if (!j || j.code !== 0) {
+            if (retry++ < 2) { setTimeout(step, 600); return; }
+            resolve(items);
+            return;
+          }
+          retry = 0;
+          pages++;
+          var d = j.data || {}, ml = d.mediaList || [];
+          for (var i = 0; i < ml.length; i++) {
+            var bv = ml[i] && ml[i].bv_id;
+            if (!bv || seen[bv]) continue;
+            seen[bv] = 1;
+            items.push(bv);
+          }
+          if (onProgress) onProgress(items.length);
+          if (!ml.length || !d.hasMore || pages >= BILI_LIST_MAX_PAGES) { resolve(items); return; }
+          offset = d.nextOffset;
+          setTimeout(step, BILI_LIST_GAP_MS);
+        }).catch(function () {
+          if (retry++ < 2) { setTimeout(step, 800); return; }
+          resolve(items);
+        });
+      }
+      step();
+    });
+  }
+
+  // 打乱顺序：当前集置顶（不打断正在看的视频），其余用洗牌结果
+  function startListShuffle(items) {
+    var cur = listActiveBvid();
+    var pool = items.slice();
+    var head = null;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i] === cur) { head = pool.splice(i, 1)[0]; break; }
+    }
+    pool = shuffleOf(pool);
+    var order = (head ? [head] : []).concat(pool);
+    saveListState({ mid: listMid(), active: true, at: Date.now(), order: order });
+    updateListButton();
+    toast("已随机打乱 " + order.length + " 集，本集播完按随机顺序继续");
+  }
+
+  var listFetching = false; // 读取中标记：避免连点触发多轮全量抓取
+
+  function listShuffleAct() {
+    if (!isBiliListPage() || listFetching) return;
+    var mid = listMid();
+    if (!mid) return;
+    if (loadListState()) {           // 已在随机中 → 再点一次关闭，恢复原生顺序
+      clearListState();
+      updateListButton();
+      toast("已关闭随机播放，恢复 B 站顺序连播");
+      return;
+    }
+    var cached = loadListCache(mid);
+    if (cached) { startListShuffle(cached); return; }
+
+    var total = listTotalCount();
+    var lastAt = 0;
+    listFetching = true;
+    toast(total > 1 ? "正在读取列表 0/" + total + "…" : "正在读取视频列表…");
+    fetchListAll(mid, function (n) {
+      var now = Date.now();
+      if (now - lastAt < 500) return; // 节流：一次请求改一次文案就够
+      lastAt = now;
+      toast("正在读取列表 " + n + (total > n ? "/" + total : "") + "…");
+    }).then(function (items) {
+      listFetching = false;
+      if (!items || items.length < 2) { toast("没有读到可播放的列表，请稍后重试"); return; }
+      saveListCache(mid, items);
+      startListShuffle(items);
+    });
+  }
+
+  // 打乱顺序里的下一集；未启用 / 当前集不在顺序里 / 已到边界都返回 null
+  function listNeighbor(step) {
+    var st = loadListState();
+    if (!st || st.mid !== listMid()) return null;
+    var i = st.order.indexOf(listActiveBvid());
+    if (i === -1) return null;
+    var n = i + step;
+    return (n >= 0 && n < st.order.length) ? st.order[n] : null;
+  }
+
+  function listUrlForBvid(bvid) {
+    var qs = null;
+    try { qs = new URLSearchParams(location.search); } catch (e) { qs = null; }
+    if (!qs) return "/list/" + listMid() + "?bvid=" + bvid;
+    qs.set("bvid", bvid);
+    qs["delete"]("oid"); // oid 交给页面按 bvid 自己解析，避免带上旧值
+    var s = qs.toString();
+    return location.pathname + (s ? "?" + s : "");
+  }
+
+  function listNavigate(bvid) {
+    if (!bvid) return false;
+    location.href = listUrlForBvid(bvid);
+    return true;
+  }
+
+  // 播放器「下一集 / 上一集」按键：随机启用时改走打乱顺序
+  function hookListPlayerNav() {
+    var p = null;
+    try { p = unsafeWindow.player; } catch (e) { return; }
+    if (!p || typeof p.next !== "function") return;
+    if (p.__wbListNav) {
+      if (p.next !== p.__wbListNext) p.next = p.__wbListNext;
+      if (p.prev !== p.__wbListPrev) p.prev = p.__wbListPrev;
+      return;
+    }
+    p.__wbListOrigNext = p.next;
+    p.__wbListOrigPrev = typeof p.prev === "function" ? p.prev : null;
+    p.__wbListNext = function () {
+      if (listNavigate(listNeighbor(1))) return;
+      return p.__wbListOrigNext ? p.__wbListOrigNext.apply(p, arguments) : undefined;
+    };
+    p.__wbListPrev = function () {
+      if (listNavigate(listNeighbor(-1))) return;
+      return p.__wbListOrigPrev ? p.__wbListOrigPrev.apply(p, arguments) : undefined;
+    };
+    p.next = p.__wbListNext;
+    p.prev = p.__wbListPrev;
+    p.__wbListNav = true;
+  }
+
+  // 自动连播：播完时接管（捕获阶段先于页面自身的「顺序播下一集」）
+  function hookListVideoEnded() {
+    var v = document.querySelector("video");
+    if (!v || v.__wbListEnded) return;
+    v.__wbListEnded = true;
+    v.addEventListener("ended", function () {
+      if (listNavigate(listNeighbor(1))) return;
+    }, true);
+  }
+
+  function listButtonActive() {
+    if (!isBiliListPage()) return false;
+    var st = loadListState();
+    return !!(st && st.mid === listMid());
+  }
+
+  function updateListButton() {
+    var btn = document.getElementById("wb-list-shuffle-btn");
+    if (!btn) return;
+    var on = listButtonActive();
+    btn.style.color = on ? "#00a1d6" : "#61666d";
+    btn.style.background = on ? "rgba(0,161,214,.1)" : "transparent";
+    btn.title = on
+      ? "随机播放中：本集播完按打乱顺序继续 · 再点一次关闭"
+      : "随机打乱「UP主的全部视频」顺序，播完按新顺序连播";
+    var txt = btn.querySelector(".wb-list-shuffle-text");
+    if (txt) txt.textContent = on ? "随机中" : "随机播放";
+  }
+
+  function createListShuffleButton(onClick, marginLeft) {
+    var btn = document.createElement("div");
+    btn.id = "wb-list-shuffle-btn";
+    btn.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:14px;height:14px;">' +
+      ICON_SHUFFLE + "</svg>" +
+      '<span class="wb-list-shuffle-text" style="margin-left:3px;">随机播放</span>';
+    btn.style.cssText =
+      "display:inline-flex;align-items:center;cursor:pointer;color:#61666d;font-size:12px;" +
+      "padding:0 6px;height:24px;line-height:24px;border-radius:4px;margin-left:" + (marginLeft || 0) + "px;" +
+      "user-select:none;-webkit-user-select:none;";
+    btn.addEventListener("mouseenter", function () { if (!listButtonActive()) btn.style.color = "#00a1d6"; });
+    btn.addEventListener("mouseleave", function () { btn.style.color = listButtonActive() ? "#00a1d6" : "#61666d"; });
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
+
+  // 列表播放页：按钮插在面板头部「顺序播放」图标之后（该行右侧留白处）
+  function ensureListButton() {
+    if (!isBiliListPage()) return;
+    var hdr = document.querySelector(".action-list-header .header-left");
+    var old = document.getElementById("wb-list-shuffle-btn");
+    if (!isModuleEnabledHere("biliRandom") || !hdr) {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
+    if (old && old.parentNode === hdr) { updateListButton(); return; }
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var btn = createListShuffleButton(listShuffleAct, 4);
+    var playOrder = hdr.querySelector(".list-playorder-btn");
+    if (playOrder && playOrder.parentNode === hdr) hdr.insertBefore(btn, playOrder.nextSibling);
+    else hdr.appendChild(btn);
+    updateListButton();
+  }
+
+  // 投稿页：「随机播放」插在「播放全部」后面；随机取一张卡片带去列表页
+  function spaceShuffleAct() {
+    var mid = listMid();
+    if (!mid) return;
+    var links = document.querySelectorAll(".upload-video-card a[href*='/video/BV']");
+    var pool = [], seen = {};
+    for (var i = 0; i < links.length; i++) {
+      var m = (links[i].getAttribute("href") || "").match(/\/video\/(BV[0-9A-Za-z]+)/);
+      if (!m || seen[m[1]]) continue;
+      seen[m[1]] = 1;
+      pool.push(m[1]);
+    }
+    if (!pool.length) { toast("没有找到可随机播放的视频"); return; }
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    location.href = "https://www.bilibili.com/list/" + mid + "?bvid=" + pick + BILI_SHUFFLE_HASH;
+  }
+
+  function ensureSpaceButton() {
+    if (!isBiliSpaceUploadPage()) return;
+    var bar = document.querySelector(".video-header__top");
+    var old = document.getElementById("wb-list-shuffle-btn");
+    if (!isModuleEnabledHere("biliRandom") || !bar) {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
+    var playAll = bar.querySelector("button.playall-btn");
+    if (!playAll || !playAll.parentNode) return;
+    if (old && old.parentNode === bar) return;
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var btn = createListShuffleButton(spaceShuffleAct, 8);
+    btn.title = "从当前页随机挑一集开始，之后按打乱顺序连播整个列表";
+    bar.insertBefore(btn, playAll.nextSibling);
+  }
+
+  // 从投稿页带 #wb-shuffle 过来时自动进入随机（当前集就是随机起点）
+  var listHashHandled = false;
+  function handleShuffleHash() {
+    if (listHashHandled || !isBiliListPage()) return;
+    if (location.hash.indexOf("wb-shuffle") === -1) return;
+    listHashHandled = true;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* ignore */ }
+    if (loadListState()) { updateListButton(); return; }
+    listShuffleAct();
+  }
+
+  function listTick() {
+    if (!isBiliListPage()) return;
+    ensureListButton();
+    hookListPlayerNav();
+    hookListVideoEnded();
+    handleShuffleHash();
+    var st = loadListState();
+    if (st && st.mid !== listMid()) { clearListState(); updateListButton(); }
+  }
+
   /* ---------------- 路由/定时驱动 ---------------- */
   var biliRouteHooked = false;
   var biliLastFullScan = 0;      // 上次全量选集扫描时间（扫描降频，避免长挂机时 GC/CPU 压力累积）
   var BILI_FULL_SCAN_MS = 5000;  // 全量扫描最小间隔；换集/路由变化时由 onRouteRefresh 立即补扫
 
   function onRouteRefresh() {
+    if (isBiliListPage()) { listTick(); return; }
+    if (isBiliSpaceUploadPage()) { ensureSpaceButton(); return; }
     if (!isBiliVideoPage()) return;
     refreshBiliOrder();
     biliLastFullScan = Date.now();
@@ -484,8 +831,8 @@
   function hookBiliRoute() {
     if (biliRouteHooked) return; // mount 可能被 ensureUI 再次触发，防重复挂钩
     biliRouteHooked = true;
-    if (location.hostname !== "www.bilibili.com") return;
-    try {
+    if (location.hostname !== "www.bilibili.com" && location.hostname !== "space.bilibili.com") return;
+    if (location.hostname === "www.bilibili.com") try {
       ["pushState", "replaceState"].forEach(function (name) {
         var orig = history[name];
         if (typeof orig !== "function") return;
@@ -510,6 +857,10 @@
           biliLastFullScan = Date.now();
           refreshBiliOrder();
         }
+      } else if (isBiliListPage()) {
+        listTick();
+      } else if (isBiliSpaceUploadPage()) {
+        ensureSpaceButton();
       }
     }
     setInterval(tick, 1000);
@@ -518,9 +869,9 @@
 
   defineModule({
     id: "biliRandom",
-    label: "B站合集随机播放",
+    label: "B站合集 / 列表随机播放",
     icon: "🎲",
-    hosts: ["www.bilibili.com"],
+    hosts: ["www.bilibili.com", "space.bilibili.com"],
     defaults: {},
     mount: function () { hookBiliRoute(); },
     refresh: function () { onRouteRefresh(); }
