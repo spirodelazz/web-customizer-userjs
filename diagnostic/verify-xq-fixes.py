@@ -138,6 +138,24 @@ body{margin:0;font:14px/1.5 sans-serif}
 </div></div>
 <script src="/us.js"></script></body></html>""" % STUB
 
+# 个股 / 指数页（/S/*）：线上实测结构，容器 .container-lg.clearfix 里是
+# 浮动左导航（约 190）+ .stock__main（640，浮动）+ .stock__side（280，浮动）
+STOCKPAGE = """<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:14px/1.5 sans-serif}
+.container-lg{width:1150px;margin:0 auto}
+.container-lg::after{content:"";display:table;clear:both}
+.nav{float:left;width:190px;height:2000px;background:#eee}
+.stock__main{float:left;width:640px;height:2000px;background:#fff}
+.stock__side{float:right;width:280px;height:1228px;background:#f7f7f7}
+</style></head><body>
+<script>%s</script>
+<div id="app"><div class="container-lg clearfix">
+<div class="nav">left nav</div>
+<div class="container-sm float-left stock__main">main</div>
+<div class="container-side-sm float-right stock__side">side</div>
+</div></div>
+<script src="/us.js"></script></body></html>""" % STUB
+
 results = []
 def check(name, ok, detail=""):
     results.append((name, ok, detail))
@@ -357,6 +375,31 @@ with sync_playwright() as p:
     check("K5 流体容器下正文被限制在版心宽度", 995 <= k5["w"] <= 1005, k5)
     check("K6 版心水平居中", abs(k5["left"] - (k5["bodyW"] - k5["w"]) / 2) <= 2, k5)
     check("K7 侧栏仍被隐藏", k5["side"] == "none", k5)
+    ctx.close()
+
+    # ---- S: 个股 / 指数页（stock__* 命名） ----
+    # 视口 888：与用户实测一致（body 873），此时几何兜底因「每层 ≥900px」整条断掉，
+    # 只有类名规则能救
+    ctx, pg = new_page(STOCKPAGE, "https://xueqiu.com/S/CSI932069", width=888)
+    pg.wait_for_timeout(2500)
+    ss = pg.evaluate("""() => {
+      const c = document.querySelector('.container-lg').getBoundingClientRect();
+      const m = document.querySelector('.stock__main').getBoundingClientRect();
+      const nav = document.querySelector('.nav').getBoundingClientRect();
+      const side = document.querySelector('.stock__side');
+      return { side: getComputedStyle(side).display,
+               scope: document.querySelector('.container-lg').getAttribute('data-wb-xq-scope'),
+               mainW: Math.round(m.width), mainLeft: Math.round(m.left),
+               navLeft: Math.round(nav.left), navW: Math.round(nav.width),
+               navDisplay: getComputedStyle(document.querySelector('.nav')).display,
+               cLeft: Math.round(c.left), bodyW: Math.round(document.body.getBoundingClientRect().width) };
+    }""")
+    check("S1 个股页侧栏被隐藏", ss["side"] == "none", ss)
+    check("S2 个股页容器已打 scope 标记", ss["scope"] == "1", ss)
+    check("S3 个股页主栏在导航右侧展开（未被导航压住）",
+          ss["mainLeft"] - ss["navLeft"] == ss["navW"], ss)
+    check("S4 个股页主栏拉宽", ss["mainW"] >= 930, ss["mainW"])
+    check("S5 左侧导航未被隐藏", ss["navDisplay"] != "none" and ss["navW"] == 190, ss)
     ctx.close()
 
     # ---- D: 防跳顶误判 / 真跳顶 ----

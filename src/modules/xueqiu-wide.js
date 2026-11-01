@@ -71,6 +71,16 @@
          里放主内容列 + .profiles__side（280 固定宽）。这页一个 col-- 类名都没有，
          上面的规则全落空，此前只靠几何兜底撑着，一旦兜底标记被撤销右栏就会闪出来 */
       '[data-wb-xq-scope] [class*="profiles__side"]{display:none!important;}',
+      /* 个股 / 指数页（/S/*）是第四套命名：.container-lg.clearfix 里依次是
+         左侧导航（约 190px，浮动）+ .stock__main（640，浮动）+ .stock__side（280，浮动）。
+         这一页没有任何 col-- 类名，只能靠几何兜底，而兜底要求「从 body 往下每层
+         ≥900px」——窗口窄于 900 时第一个节点就被刷掉，整页识别不到 */
+      '[data-wb-xq-scope] [class*="stock__side"]{display:none!important;}',
+      /* 主栏左侧压着浮动的导航，直接 float:none + width:auto 会让正文滑到导航底下。
+         用 flow-root 建立 BFC：BFC 盒子不与浮动重叠，自动收窄成「导航右侧的剩余宽度」，
+         同时不必写死导航宽度 */
+      '[data-wb-xq-scope] [class*="stock__main"]' +
+      '{width:auto!important;float:none!important;display:flow-root!important;}',
       '[data-wb-xq-scope] [class*="home__col--lf"]{width:auto!important;max-width:none!important;' +
       'flex:1 1 auto!important;float:none!important;}',
       /* 用户主页主内容列：侧栏被 CSS 隐藏后几何兜底测不到它（display:none 的列宽为 0），
@@ -107,7 +117,8 @@
 
   /* ---------------- 精确选择器的容器限定 ---------------- */
   var XQ_SCOPE_SEL = '[class*="home__col--rt"],[class*="user__col--middle"],' +
-    '[class*="user__col--right"],[class*="user__col--rt"],[class*="profiles__side"]';
+    '[class*="user__col--right"],[class*="user__col--rt"],[class*="profiles__side"],' +
+    '[class*="stock__side"]';
   var XQ_SCOPE_UP = 4;   // 从列往上最多找 4 层容器
 
   // 找出这个列所属的「页面级布局层」：向上找最近一个宽度/高度都够大的祖先。
@@ -263,7 +274,8 @@
   var XQ_MAX_WIDTH_DEFAULT = 1000;   // ≈ 雪球自身版心宽度，隐藏侧栏后比原 680 宽但不变形
   // 被我们拉宽的两类主栏：几何兜底标记的、以及用户主页按类名放开的
   var XQ_MAIN_SEL = '[data-wb-xq-main],' +
-    '[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"])';
+    '[data-wb-xq-scope][class*="profiles__main__container"] > div:not([class*="profiles__side"]),' +
+    '[data-wb-xq-scope] [class*="stock__main"]';
 
   function updateXqDynCss() {
     if (!document.head) return;
